@@ -1,0 +1,16 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+includes:
+  - common: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.31.0/tasks/lint.yaml
+
+tasks:
+  - name: license
+    description: check SPDX license headers
+    actions:
+      - task: common:license
+
+  - name: fix-license
+    description: add SPDX license headers to source files
+    actions:
+      - task: common:fix-license

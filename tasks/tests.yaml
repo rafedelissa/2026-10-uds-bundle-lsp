@@ -1,0 +1,156 @@
+# Copyright 2024-2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+tasks:
+  - name: unit
+    description: run all package unit tests
+    actions:
+      - cmd: go test ./cmd/... ./internal/... ./pkg/... -failfast -v -timeout 5m
+
+  - name: architecture
+    description: verify Legacy packages do not depend on canonical Next packages
+    actions:
+      - cmd: ./hack/check-architecture.sh
+
+  - name: legacy:e2e
+    description: run all Legacy end to end tests
+    actions:
+      - cmd: go test ./tests/legacy/e2e -failfast -v -timeout 60m
+
+  - name: next-unit
+    description: run only Next package unit tests
+    actions:
+      - cmd: |
+          go list ./cmd/... ./internal/... ./pkg/... | \
+          grep -Ev '/(legacy|testutil)(/|$)' | \
+          xargs go test -v -count=1 -timeout 5m
+
+  - name: next-cli-non-cluster
+    description: run Next CLI tests without a supplied cluster
+    actions:
+      - cmd: |
+          CLI_FEATURES=NextMode=true \
+          UDS_CLI_PATH="$(pwd)/build/uds" \
+          go test -v -count=1 -timeout 25m -tags=cli ./tests/cli/... ./tests/testutil
+
+  - name: next-library-non-cluster
+    description: run local public API contracts without a cluster
+    actions:
+      - cmd: go test -v -count=1 -timeout 5m -tags=library ./tests/library/...
+
+  - name: next-library-non-cluster-package-verification
+    description: verify signed remote packages through the public API
+    actions:
+      - cmd: go test -v -count=1 -timeout 10m -tags=library,signing_integration -run '^TestKeylessPackageVerification$' ./tests/library
+
+  - name: next-library-non-cluster-keyless
+    description: require GitHub OIDC for public keyless signing contracts
+    actions:
+      - cmd: go test -v -count=1 -timeout 10m -tags=library,signing_integration -run '^TestKeylessBundleSigning$' ./tests/library
+
+  - name: next-library-non-cluster-lifecycle
+    description: create and clean up an isolated cluster through the public API
+    actions:
+      - cmd: mise exec "zarf@$(go list -m -json github.com/zarf-dev/zarf | jq -r '.Version | ltrimstr("v")')" -- go test -v -count=1 -timeout 50m -tags=library,cluster_integration,owned_cluster ./tests/library/cluster
+
+  - name: next-library-in-cluster
+    description: run public API contracts against an explicitly supplied Zarf-ready cluster
+    actions:
+      - cmd: go test -v -count=1 -timeout 20m -tags=library,cluster_integration ./tests/library/cluster
+
+  - name: next-cli-non-cluster-lifecycle
+    description: run the Next CLI cluster creation and cleanup contract
+    actions:
+      - cmd: mise exec "zarf@$(go list -m -json github.com/zarf-dev/zarf | jq -r '.Version | ltrimstr("v")')" -- go test -v -count=1 -timeout 50m -tags=cluster_integration ./tests/cluster/lifecycle
+
+  - name: next-cli-in-cluster
+    description: run Next CLI tests against an explicitly supplied Zarf-ready cluster
+    actions:
+      - cmd: go test -v -count=1 -timeout 40m -parallel=4 -tags=cluster_integration ./tests/cluster
+
+  - name: next-smoke-uds-core
+    description: run Next UDS Core smoke tests
+    actions:
+      - cmd: |
+          CLI_FEATURES=NextMode=true \
+          UDS_CLI_PATH="$(pwd)/build/uds" \
+          go test -v -count=1 -timeout 60m -tags=uds_core_smoke ./tests/smoke/...
+
+  - name: preparation
+    description: run local preparation checks
+    actions:
+      - task: unit
+      - task: architecture
+
+  - name: e2e-ghcr
+    description: run e2e tests that write to GHCR
+    actions:
+      - cmd: cd tests/legacy/e2e && go test -failfast -v -timeout 30m -run ".*GHCR.*"
+
+  - name: bundle
+    description: only run tests in bundle_test.go
+    actions:
+      - cmd: cd tests/legacy/e2e && go test -failfast -v -timeout 30m bundle_test.go commands_test.go main_test.go
+
+  - name: deploy-flags
+    description: only run tests in bundle_deploy_flags_test.go
+    actions:
+      - cmd: cd tests/legacy/e2e && go test -failfast -v -timeout 30m bundle_deploy_flags_test.go commands_test.go main_test.go
+
+  - name: index
+    description: only run tests in bundle_index_test.go
+    actions:
+      - cmd: cd tests/legacy/e2e && go test -failfast -v -timeout 30m bundle_index_test.go common.go commands_test.go main_test.go
+
+  - name: completion
+    description: only run tests in completion_test.go
+    actions:
+      - cmd: cd tests/legacy/e2e && go test -failfast -v -timeout 30m completion_test.go commands_test.go main_test.go
+
+  - name: dev
+    description: only run tests in dev_test.go and state_test.go (grouped bc neither require zarf init)
+    actions:
+      # commenting out state tests for now as its behind a feature flag and not ready for CI
+      #- cmd: cd tests/legacy/e2e && go test -failfast -v -timeout 30m dev_test.go state_test.go commands_test.go main_test.go
+      - cmd: cd tests/legacy/e2e && go test -failfast -v -timeout 30m dev_test.go commands_test.go main_test.go
+
+  - name: variable
+    description: only run tests in variable_test.go
+    actions:
+      - cmd: cd tests/legacy/e2e && go test -failfast -v -timeout 30m variable_test.go commands_test.go main_test.go
+
+  - name: optional-bundle
+    description: only run tests in optional_bundle_test.go
+    actions:
+      - cmd: cd tests/legacy/e2e && go test -failfast -v -timeout 30m optional_bundle_test.go commands_test.go main_test.go
+
+  - name: vendor
+    description: only run tests for vendored apps (zarf, maru)
+    actions:
+      - cmd: cd tests/legacy/e2e && go test -failfast -v -timeout 30m zarf_test.go runner_test.go commands_test.go main_test.go
+
+  - name: engine-e2e
+    description: only run engine e2e tests
+    actions:
+      - cmd: cd tests/legacy/e2e && go test -failfast -v -timeout 30m monitor_test.go commands_test.go main_test.go
+        description: run the engine e2e tests (assumes running on cluster with uds-core installed i.e. k3d-core-slim-dev)
+
+  - name: push-test-artifacts
+    description: push artifacts that UDS CLI tests rely on to GHCR
+    actions:
+      - cmd: ./hack/push-test-artifacts.sh
+
+  - name: clean-test-artifacts
+    description: removes bundles and zarf packages that have been created from previous test runs
+    actions:
+      - cmd: find testdata/legacy -type f -name '*.tar.zst' -delete
+
+  - name: ci-uds-core-smoke-test
+    description: deploy UDS Core (slim dev) and run validations
+    actions:
+      - cmd: build/uds deploy k3d-core-slim-dev:latest --confirm
+      - cmd: |
+          # basic status checks
+          build/uds zarf tools wait-for gateways.networking.istio.io admin-gateway -n istio-admin-gateway --timeout 10s
+          build/uds zarf tools wait-for gateways.networking.istio.io tenant-gateway -n istio-tenant-gateway --timeout 10s
+          build/uds zarf tools wait-for package keycloak -n keycloak --timeout 10s

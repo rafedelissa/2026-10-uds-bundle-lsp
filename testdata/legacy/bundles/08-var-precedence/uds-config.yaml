@@ -1,0 +1,15 @@
+# Copyright 2024 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+options:
+  log_level: debug
+
+shared:
+  domain: burning.boats # used in helm-overrides pkg, but overridden in output-var pkg
+  ui_color: purple # overridden by env var
+
+variables:
+  helm-overrides:
+    ui_color: pink
+  output-var:
+    domain: unicorns.uds.dev # overrides shared.domain

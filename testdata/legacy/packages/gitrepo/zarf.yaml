@@ -1,0 +1,31 @@
+# Copyright 2024 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+kind: ZarfPackageConfig
+metadata:
+  name: gitrepo
+  version: 0.0.1
+
+components:
+  - name: neuvector
+    required: true
+    repos:
+      - https://github.com/uds-packages/neuvector@5.4.7-uds.1-upstream
+  - name: nginx
+    required: true
+    manifests:
+      - name: simple-nginx-deployment
+        namespace: nginx
+        files:
+          - refs/deployment.yaml
+    actions:
+      onDeploy:
+        after:
+          - wait:
+              cluster:
+                kind: deployment
+                name: nginx-deployment
+                namespace: nginx
+                condition: available
+    images:
+      - docker.io/library/nginx:1.31.6

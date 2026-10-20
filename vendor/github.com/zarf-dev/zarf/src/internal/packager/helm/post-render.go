@@ -1,0 +1,487 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2021-Present The Zarf Authors
+
+// Package helm contains operations for working with helm charts.
+package helm
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"slices"
+
+	"github.com/zarf-dev/zarf/src/pkg/state"
+
+	"github.com/zarf-dev/zarf/src/api"
+	"github.com/zarf-dev/zarf/src/config"
+	"github.com/zarf-dev/zarf/src/pkg/cluster"
+	"github.com/zarf-dev/zarf/src/pkg/logger"
+	"github.com/zarf-dev/zarf/src/pkg/variables"
+	"helm.sh/helm/v4/pkg/action"
+	releaseutil "helm.sh/helm/v4/pkg/release/v1/util"
+	"sigs.k8s.io/yaml"
+
+	corev1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+)
+
+type renderer struct {
+	chart api.Chart
+
+	takeOwnership   bool
+	cluster         *cluster.Cluster
+	connectedDeploy bool
+	state           *state.State
+	actionConfig    *action.Configuration
+	variableConfig  *variables.VariableConfig
+
+	connectStrings    state.ConnectStrings
+	namespaces        map[string]*corev1.Namespace
+	pkgName           string
+	namespaceOverride string
+}
+
+func newRenderer(ctx context.Context, chart api.Chart, takeOwnership bool, c *cluster.Cluster, connectedDeploy bool, s *state.State, actionConfig *action.Configuration, variableConfig *variables.VariableConfig, pkgName string, namespaceOverride string) (*renderer, error) {
+	if actionConfig == nil {
+		return nil, fmt.Errorf("action configuration required to run post renderer")
+	}
+	if variableConfig == nil {
+		return nil, fmt.Errorf("variable configuration required to run post renderer")
+	}
+	if pkgName == "" {
+		return nil, fmt.Errorf("package name required to run post renderer")
+	}
+	// Update secrets when not in connected mode, as connected packages in hybrid / air-gap clusters could rely on pulling from the registry with ###ZARF_REGISTRY###
+	rend := &renderer{
+		chart:             chart,
+		takeOwnership:     takeOwnership,
+		cluster:           c,
+		connectedDeploy:   connectedDeploy,
+		state:             s,
+		actionConfig:      actionConfig,
+		variableConfig:    variableConfig,
+		connectStrings:    state.ConnectStrings{},
+		namespaces:        map[string]*corev1.Namespace{},
+		pkgName:           pkgName,
+		namespaceOverride: namespaceOverride,
+	}
+
+	namespace, err := rend.cluster.Clientset.CoreV1().Namespaces().Get(ctx, rend.chart.Namespace, metav1.GetOptions{})
+	if err != nil && !kerrors.IsNotFound(err) {
+		return nil, fmt.Errorf("unable to check for existing namespace %q in cluster: %w", rend.chart.Namespace, err)
+	}
+	if kerrors.IsNotFound(err) {
+		rend.namespaces[rend.chart.Namespace] = cluster.NewZarfManagedNamespace(rend.chart.Namespace)
+	} else if rend.takeOwnership {
+		delete(namespace.Labels, cluster.AgentLabel)
+		namespace.Labels = cluster.AdoptZarfManagedLabels(namespace.Labels)
+		rend.namespaces[rend.chart.Namespace] = namespace
+	}
+
+	return rend, nil
+}
+
+// Run satisfies the Helm post-renderer interface. It templates the Zarf variables, finds connect strings, adopts namespaces, and applies Zarf state secrets
+func (r *renderer) Run(renderedManifests *bytes.Buffer) (*bytes.Buffer, error) {
+	// This is very low cost and consistent for how we replace elsewhere, also good for debugging
+	hooks, resources, err := getTemplatedManifests(renderedManifests, r.variableConfig, r.actionConfig)
+	if err != nil {
+		return nil, err
+	}
+	finalManifestsOutput := bytes.NewBuffer(nil)
+	ctx := context.Background()
+
+	for _, hook := range hooks {
+		fmt.Fprintf(finalManifestsOutput, "---\n# Source: %s\n%s\n", hook.Path, hook.Manifest)
+	}
+
+	if err := r.editHelmResources(ctx, resources, finalManifestsOutput); err != nil {
+		return nil, err
+	}
+	if err := r.adoptAndUpdateNamespaces(ctx); err != nil {
+		return nil, err
+	}
+	// Send the bytes back to helm
+	return finalManifestsOutput, nil
+}
+
+func (r *renderer) adoptAndUpdateNamespaces(ctx context.Context) error {
+	l := logger.From(ctx)
+	c := r.cluster
+	namespaceList, err := r.cluster.Clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return err
+	}
+	for name, namespace := range r.namespaces {
+		// Check to see if this namespace already exists
+		var existingNamespace bool
+		for _, serverNamespace := range namespaceList.Items {
+			if serverNamespace.Name == name {
+				existingNamespace = true
+				break
+			}
+		}
+		// If the namespace doesn't exist then create it. If it does exist and is already managed by Zarf then update the labels with
+		// the new package and namespace override labels.
+		if !existingNamespace {
+			// This is a new namespace, add it
+			_, err := c.Clientset.CoreV1().Namespaces().Create(ctx, namespace, metav1.CreateOptions{})
+			if err != nil {
+				return fmt.Errorf("unable to create the missing namespace %s", name)
+			}
+		} else if r.takeOwnership {
+			// Refuse to adopt namespace if it is one of four initial Kubernetes namespaces.
+			// https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/#initial-namespaces
+			if slices.Contains([]string{"default", "kube-node-lease", "kube-public", "kube-system"}, name) {
+				l.Warn("refusing to adopt initial namespace", "name", name)
+			} else {
+				// This is an existing namespace to adopt
+				_, err := c.Clientset.CoreV1().Namespaces().Update(ctx, namespace, metav1.UpdateOptions{})
+				if err != nil {
+					return fmt.Errorf("unable to adopt the existing namespace %s", name)
+				}
+			}
+		}
+
+		if r.state.RegistryInfo.IsConfigured() {
+			validRegistrySecret, err := c.GenerateRegistryPullCreds(ctx, name, config.ZarfImagePullSecretName, r.state.RegistryInfo)
+			if err != nil {
+				return err
+			}
+			_, err = c.Clientset.CoreV1().Secrets(*validRegistrySecret.Namespace).Apply(ctx, validRegistrySecret, metav1.ApplyOptions{Force: true, FieldManager: cluster.FieldManagerName})
+			if err != nil {
+				return fmt.Errorf("problem applying registry secret for the %s namespace: %w", name, err)
+			}
+			if r.state.RegistryInfo.ShouldUseMTLS() {
+				clientPKI, err := c.GetRegistryClientMTLSCert(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get registry client certs: %w", err)
+				}
+				if err := c.ApplyRegistryClientCertSecret(ctx, clientPKI, name); err != nil {
+					return fmt.Errorf("failed to apply registry client secret to ns: %s: %w", name, err)
+				}
+			}
+		}
+		if r.state.GitServer.IsConfigured() {
+			gitServerSecret := c.GenerateGitPullCreds(name, config.ZarfGitServerSecretName, r.state.GitServer)
+			_, err = c.Clientset.CoreV1().Secrets(*gitServerSecret.Namespace).Apply(ctx, gitServerSecret, metav1.ApplyOptions{Force: true, FieldManager: cluster.FieldManagerName})
+			if err != nil {
+				return fmt.Errorf("problem applying git server secret for the %s namespace: %w", name, err)
+			}
+		}
+	}
+	return nil
+}
+
+func (r *renderer) shouldAddAgentIgnoreLabels() bool {
+	return r.connectedDeploy && r.state != nil && r.state.AgentInfo.IsConfigured()
+}
+
+func (r *renderer) editHelmResources(ctx context.Context, resources []releaseutil.Manifest, finalManifestsOutput *bytes.Buffer) error {
+	l := logger.From(ctx)
+	resources, err := flattenHelmResources(resources)
+	if err != nil {
+		return err
+	}
+	for _, resource := range resources {
+		// parse to unstructured to have access to more data than just the name
+		newContent, rawData, err := processManifestContent(resource.Content, func(obj *unstructured.Unstructured) error {
+			// Add the package label to all resources
+			labels := obj.GetLabels()
+			if labels == nil {
+				labels = map[string]string{}
+			}
+			obj.SetLabels(r.setPackageLabels(labels))
+			// Add the package label to the pod template of anything that has one
+			if err := r.addPodTemplateLabels(obj); err != nil {
+				return fmt.Errorf("failed to add labels to pod template: %w", err)
+			}
+			// In connected or YOLO mode, add agent ignore labels so the webhook doesn't mutate resources
+			if r.shouldAddAgentIgnoreLabels() {
+				if err := addAgentIgnoreLabels(obj); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		resource.Content = newContent
+
+		// If the object is empty, it's a blank resource, so we skip it.
+		if len(rawData.Object) == 0 {
+			continue
+		}
+
+		switch rawData.GetKind() {
+		case "Namespace":
+			namespace := &corev1.Namespace{}
+			// parse the namespace resource so it can be applied out-of-band by zarf instead of helm to avoid helm ns shenanigans
+			if err := runtime.DefaultUnstructuredConverter.FromUnstructured(rawData.UnstructuredContent(), namespace); err != nil {
+				l.Warn("failed to parse namespace", "name", rawData.GetName(), "error", err)
+			} else {
+				l.Debug("matched helm namespace for zarf annotation", "name", namespace.Name)
+				namespace.Labels = cluster.AdoptZarfManagedLabels(namespace.Labels)
+				// Add it to the stack
+				r.namespaces[namespace.Name] = namespace
+			}
+			// skip so we can strip namespaces from helm's brain
+			continue
+
+		case "Service":
+			// Check service resources for the zarf-connect label
+			labels := rawData.GetLabels()
+			if labels == nil {
+				labels = map[string]string{}
+			}
+			annotations := rawData.GetAnnotations()
+			if annotations == nil {
+				annotations = map[string]string{}
+			}
+			if key, keyExists := labels[cluster.ZarfConnectLabelName]; keyExists {
+				// If there is a zarf-connect label
+				l.Debug("match helm service for zarf connection", "service", rawData.GetName(), "connectionKey", key)
+
+				// Add the connectString for processing later in the deployment
+				r.connectStrings[key] = state.ConnectString{
+					Description: annotations[cluster.ZarfConnectAnnotationDescription],
+					URL:         annotations[cluster.ZarfConnectAnnotationURL],
+				}
+			}
+		}
+
+		namespace := rawData.GetNamespace()
+		if _, exists := r.namespaces[namespace]; !exists && namespace != "" {
+			// if this is the first time seeing this ns, we need to track that to create it as well
+			r.namespaces[namespace] = cluster.NewZarfManagedNamespace(namespace)
+		}
+
+		// Finally place this back onto the output buffer
+		fmt.Fprintf(finalManifestsOutput, "---\n# Source: %s\n%s\n", resource.Name, resource.Content)
+	}
+	return nil
+}
+
+// flattenHelmResources replaces every list document with the resources it holds, so that the rest
+// of the post renderer only ever sees one resource per manifest.
+// A list is a wrapper rather than a resource: its metadata is a ListMeta, which has no labels
+// field, so a label written there is rejected by the API server, and everything zarf keys off the
+// kind of a document misses what the list holds. Helm flattens a list into its items before
+// applying it anyway, so the items are what ends up in the cluster either way.
+func flattenHelmResources(resources []releaseutil.Manifest) ([]releaseutil.Manifest, error) {
+	flattened := make([]releaseutil.Manifest, 0, len(resources))
+	for _, resource := range resources {
+		_, rawData, err := processManifestContent(resource.Content, nil)
+		if err != nil {
+			return nil, err
+		}
+		// IsList is the check helm's resource builder uses to decide what to flatten, so zarf and
+		// helm agree on which documents hold more than one resource
+		if len(rawData.Object) == 0 || !rawData.IsList() {
+			flattened = append(flattened, resource)
+			continue
+		}
+		err = flattenListResource(rawData, func(obj *unstructured.Unstructured) error {
+			content, err := yaml.Marshal(obj.Object)
+			if err != nil {
+				return fmt.Errorf("failed to marshal list item: %w", err)
+			}
+			// the item inherits the manifest name zarf writes its own source comment from. helm
+			// tracks the original file with an annotation it puts on the wrapper, which the item
+			// does not carry, so helm files these under a generated name of its own
+			item := resource
+			item.Content = string(content)
+			flattened = append(flattened, item)
+			return nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to flatten %s: %w", rawData.GetKind(), err)
+		}
+	}
+	return flattened, nil
+}
+
+// flattenListResource calls addResource once for every resource a document holds, walking a list
+// that holds lists all the way down
+func flattenListResource(obj *unstructured.Unstructured, addResource func(*unstructured.Unstructured) error) error {
+	if !obj.IsList() {
+		return addResource(obj)
+	}
+	return obj.EachListItem(func(item runtime.Object) error {
+		listItem, ok := item.(*unstructured.Unstructured)
+		if !ok {
+			return fmt.Errorf("unexpected item of type %T in %s", item, obj.GetKind())
+		}
+		return flattenListResource(listItem, addResource)
+	})
+}
+
+// podTemplateKinds maps the kubernetes kinds that create pods to where their pod template keeps its
+// labels. Only these are labeled: anything may sit at spec.template on a custom resource, and a chart
+// that wants one labeled can set zarf.dev/package={{ .Pkg.Metadata.Name }} itself.
+var podTemplateKinds = map[schema.GroupKind][]string{
+	{Group: "apps", Kind: "Deployment"}:        {"spec", "template", "metadata", "labels"},
+	{Group: "apps", Kind: "StatefulSet"}:       {"spec", "template", "metadata", "labels"},
+	{Group: "apps", Kind: "DaemonSet"}:         {"spec", "template", "metadata", "labels"},
+	{Group: "apps", Kind: "ReplicaSet"}:        {"spec", "template", "metadata", "labels"},
+	{Group: "batch", Kind: "Job"}:              {"spec", "template", "metadata", "labels"},
+	{Group: "batch", Kind: "CronJob"}:          {"spec", "jobTemplate", "spec", "template", "metadata", "labels"},
+	{Group: "", Kind: "ReplicationController"}: {"spec", "template", "metadata", "labels"},
+}
+
+// addPodTemplateLabels adds the package labels to the pod template of a workload resource
+func (r *renderer) addPodTemplateLabels(obj *unstructured.Unstructured) error {
+	path, createsPods := podTemplateKinds[obj.GroupVersionKind().GroupKind()]
+	if !createsPods {
+		return nil
+	}
+	labels, found := ensureLabelsAt(obj, path)
+	if !found {
+		// nothing shaped like a pod template, so nothing to label
+		return nil
+	}
+	return unstructured.SetNestedStringMap(obj.Object, r.setPackageLabels(labels), path...)
+}
+
+// objectMetaTail counts the trailing metadata and labels segments every label path ends in, as in
+// spec.template.metadata.labels.
+const objectMetaTail = 2
+
+// ensureLabelsAt returns the label map at path, creating it when the manifest left it out or wrote
+// it as null. Finding none is an answer, not an error: anything may sit at spec.template, and a
+// malformed resource is the API server's to report, not zarf's to fail a deploy over.
+func ensureLabelsAt(obj *unstructured.Unstructured, path []string) (map[string]string, bool) {
+	if len(path) < objectMetaTail {
+		return nil, false
+	}
+	// the route down has to exist already, since writing it in would invent a pod template the
+	// chart never asked for; the ObjectMeta and labels at the end are optional, so those are created
+	parentPath, metaPath := path[:len(path)-objectMetaTail], path[len(path)-objectMetaTail:]
+
+	parent := obj.Object
+	for _, field := range parentPath {
+		nested, isMap := parent[field].(map[string]interface{})
+		if !isMap {
+			return nil, false
+		}
+		parent = nested
+	}
+	for _, field := range metaPath {
+		nested, isMap := parent[field].(map[string]interface{})
+		if !isMap {
+			if parent[field] != nil {
+				return nil, false
+			}
+			nested = map[string]interface{}{}
+			parent[field] = nested
+		}
+		parent = nested
+	}
+	// SetNestedStringMap writes back a map[string]string, so copy out and refuse anything else
+	labels := make(map[string]string, len(parent))
+	for key, value := range parent {
+		text, isString := value.(string)
+		if !isString {
+			return nil, false
+		}
+		labels[key] = text
+	}
+	return labels, true
+}
+
+// agentMutatedKinds maps resources mutated by the Zarf agent webhook to the
+// label paths where the ignore label should be applied.
+// These come from the webhook configuration in packages/zarf-agent/chart/templates/webhook.yaml.
+var agentMutatedKinds = map[schema.GroupKind][][]string{
+	{Group: "", Kind: "Pod"}:                                    {{"metadata", "labels"}},
+	{Group: "apps", Kind: "Deployment"}:                         {{"spec", "template", "metadata", "labels"}},
+	{Group: "apps", Kind: "StatefulSet"}:                        {{"spec", "template", "metadata", "labels"}},
+	{Group: "apps", Kind: "DaemonSet"}:                          {{"spec", "template", "metadata", "labels"}},
+	{Group: "apps", Kind: "ReplicaSet"}:                         {{"spec", "template", "metadata", "labels"}},
+	{Group: "batch", Kind: "Job"}:                               {{"spec", "template", "metadata", "labels"}},
+	{Group: "batch", Kind: "CronJob"}:                           {{"spec", "jobTemplate", "spec", "template", "metadata", "labels"}},
+	{Group: "source.toolkit.fluxcd.io", Kind: "GitRepository"}:  {{"metadata", "labels"}},
+	{Group: "source.toolkit.fluxcd.io", Kind: "OCIRepository"}:  {{"metadata", "labels"}},
+	{Group: "source.toolkit.fluxcd.io", Kind: "HelmRepository"}: {{"metadata", "labels"}},
+	{Group: "argoproj.io", Kind: "Application"}:                 {{"metadata", "labels"}},
+	{Group: "argoproj.io", Kind: "ApplicationSet"}:              {{"metadata", "labels"}},
+	{Group: "argoproj.io", Kind: "AppProject"}:                  {{"metadata", "labels"}},
+	{Group: "", Kind: "Secret"}:                                 {{"metadata", "labels"}},
+}
+
+func addAgentIgnoreLabels(obj *unstructured.Unstructured) error {
+	labelPaths, ok := agentMutatedKinds[obj.GroupVersionKind().GroupKind()]
+	if !ok {
+		return nil
+	}
+	// The webhook only mutates Secrets with the ArgoCD repository label, skip all others
+	if obj.GetKind() == "Secret" {
+		labels := obj.GetLabels()
+		if labels["argocd.argoproj.io/secret-type"] != "repository" {
+			return nil
+		}
+	}
+
+	for _, path := range labelPaths {
+		labels, found := ensureLabelsAt(obj, path)
+		if !found {
+			continue
+		}
+		labels[cluster.AgentLabel] = "ignore"
+		if err := unstructured.SetNestedStringMap(obj.Object, labels, path...); err != nil {
+			return fmt.Errorf("failed to add ignore label to %s: %w", obj.GetName(), err)
+		}
+	}
+	return nil
+}
+
+// setPackageLabels will add the package labels to an existing labels map
+func (r *renderer) setPackageLabels(labels map[string]string) map[string]string {
+	if r.pkgName != "" {
+		labels[cluster.PackageLabel] = r.pkgName
+		if r.namespaceOverride != "" {
+			labels[cluster.NamespaceOverrideLabel] = r.namespaceOverride
+		}
+	}
+	return labels
+}
+
+// processManifestContent unmarshals YAML content into an unstructured object,
+// optionally modifies it via the provided function, and marshals it back to YAML.
+// It ensures the content ends with a newline before unmarshaling to preserve
+// YAML block scalar trailing newlines.
+// Returns the marshaled content, the parsed unstructured object, and any error.
+func processManifestContent(content string, modifyFn func(*unstructured.Unstructured) error) (string, *unstructured.Unstructured, error) {
+	// Ensure content ends with a newline before unmarshaling to preserve YAML trailing newlines.
+	if len(content) > 0 && content[len(content)-1] != '\n' {
+		content += "\n"
+	}
+
+	rawData := &unstructured.Unstructured{}
+	if err := yaml.Unmarshal([]byte(content), rawData); err != nil {
+		return "", nil, fmt.Errorf("failed to unmarshal manifest: %w", err)
+	}
+
+	// If the object is empty, return the original content
+	if len(rawData.Object) == 0 {
+		return content, rawData, nil
+	}
+
+	if modifyFn != nil {
+		if err := modifyFn(rawData); err != nil {
+			return "", nil, err
+		}
+	}
+
+	newContent, err := yaml.Marshal(rawData)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to marshal manifest: %w", err)
+	}
+
+	return string(newContent), rawData, nil
+}

@@ -1,0 +1,13 @@
+# Copyright 2024 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+testSecret: "dGVzdC1zZWNyZXQ=" # test-secret
+testFileSecret: ""
+podinfo:
+  ui:
+    color: "purple"
+    message: "Hello from podinfo"
+
+  # doesn't do anything, just testing more configs
+  ingress:
+    enabled: true

@@ -1,0 +1,209 @@
+# Copyright 2024-2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+includes:
+  - test: tasks/tests.yaml
+  - schema: tasks/schema.yaml
+  - docs: tasks/docs.yaml
+  - dev: tasks/dev.yaml
+  - lint: tasks/lint.yaml
+  - generate: tasks/generate.yaml
+
+tasks:
+  - name: default
+    description: run repository lint checks and unit tests
+    actions:
+      - task: lint
+      - task: test
+
+  - name: build
+    description: build a local UDS CLI binary
+    actions:
+      - cmd: mkdir -p build
+      - task: get-versions
+      - task: build-args
+      - cmd: go build -ldflags="${BUILD_ARGS}" -o build/uds ./cmd/uds
+
+  - name: lint
+    description: run repository lint checks
+    actions:
+      - cmd: hk check --all
+
+  - name: fix
+    description: fix lint findings where supported
+    actions:
+      - cmd: hk fix --all
+
+  - name: test
+    description: run preparation tests
+    actions:
+      - cmd: uds run test:preparation
+
+  # build tasks
+  - name: get-versions
+    description: gets versions of UDS CLI + vendored tools
+    actions:
+      - cmd: git rev-parse --short HEAD 2>/dev/null || echo "unknown"
+        mute: true
+        setVariables:
+          - name: GIT_COMMIT
+      - cmd: date -u +'%Y-%m-%dT%H:%M:%SZ'
+        mute: true
+        setVariables:
+          - name: BUILD_DATE
+      - cmd: go list -f '{{.Version}}' -m github.com/derailed/k9s
+        mute: true
+        setVariables:
+          - name: K9S_VERSION
+      - cmd: go list -f '{{.Version}}' -m github.com/anchore/syft
+        mute: true
+        setVariables:
+          - name: SYFT_VERSION
+      - cmd: go list -f '{{.Version}}' -m github.com/google/go-containerregistry
+        mute: true
+        setVariables:
+          - name: CRANE_VERSION
+      - cmd: go list -f '{{.Version}}' -m github.com/mholt/archives
+        mute: true
+        setVariables:
+          - name: ARCHIVER_VERSION
+      - cmd: go list -f '{{.Version}}' -m helm.sh/helm/v4
+        mute: true
+        setVariables:
+          - name: HELM_VERSION
+      - cmd: go list -f '{{.Version}}' -m github.com/zarf-dev/zarf
+        mute: true
+        setVariables:
+          - name: ZARF_VERSION
+      - cmd: git describe --tags 2>/dev/null || echo "UnknownVersion"
+        mute: true
+        setVariables:
+          - name: CLI_VERSION
+      - cmd: go list -f '{{.Version}}' -m k8s.io/client-go | sed 's/^v//' | tr '.' ' '
+        mute: true
+        setVariables:
+          - name: K8S_MODULES_VER
+      - cmd: echo ${K8S_MODULES_VER} | awk '{print $$1 + 1}'
+        mute: true
+        setVariables:
+          - name: K8S_MODULES_MAJOR_VER
+      - cmd: echo ${K8S_MODULES_VER} | awk '{print substr($0, 3, 2)}'
+        mute: true
+        setVariables:
+          - name: K8S_MODULES_MINOR_VER
+      - cmd: echo ${K8S_MODULES_VER} | awk '{print $3}'
+        mute: true
+        setVariables:
+          - name: K8S_MODULES_PATCH_VER
+
+  - name: build-args
+    description: generates the build args for building UDS CLI
+    actions:
+      - cmd: |
+          cat <<EOF
+          -s -w -X 'github.com/defenseunicorns/uds-cli/pkg/legacy/config.CLIVersion=${CLI_VERSION}' \
+            -X 'github.com/defenseunicorns/uds-cli/internal/version.Version=${CLI_VERSION}' \
+            -X 'github.com/defenseunicorns/uds-cli/internal/version.GitCommit=${GIT_COMMIT}' \
+            -X 'github.com/defenseunicorns/uds-cli/internal/version.BuildDate=${BUILD_DATE}' \
+            -X 'github.com/zarf-dev/zarf/src/config.ActionsCommandZarfPrefix=zarf' \
+            -X 'github.com/zarf-dev/zarf/src/config.CLIVersion=${ZARF_VERSION}' \
+            -X 'k8s.io/component-base/version.gitVersion=v${K8S_MODULES_MAJOR_VER}.${K8S_MODULES_MINOR_VER}.${K8S_MODULES_PATCH_VER}' \
+            -X 'helm.sh/helm/v3/pkg/chartutil.k8sVersionMajor=${K8S_MODULES_MAJOR_VER}' \
+            -X 'helm.sh/helm/v3/pkg/chartutil.k8sVersionMinor=${K8S_MODULES_MINOR_VER}' \
+            -X 'github.com/derailed/k9s/cmd.version=${K9S_VERSION}' \
+            -X 'github.com/google/go-containerregistry/cmd/crane/cmd.Version=${CRANE_VERSION}' \
+            -X 'github.com/zarf-dev/zarf/src/cmd.syftVersion=${SYFT_VERSION}' \
+            -X 'github.com/zarf-dev/zarf/src/cmd.archivesVersion=${ARCHIVER_VERSION}' \
+            -X 'helm.sh/helm/v4/internal/version.version=${HELM_VERSION}'
+          EOF
+        setVariables:
+          - name: BUILD_ARGS
+
+  - name: build-all
+    description: build all the CLI binaries and gen checksums
+    actions:
+      - task: build-cli-linux-amd
+      - task: build-cli-linux-arm
+      - task: build-cli-mac-intel
+      - task: build-cli-mac-apple
+      - cmd: sha256sum build/* > build/checksums.txt
+
+  - name: build-cli-linux-amd
+    description: build the CLI for Linux AMD64
+    actions:
+      - task: get-versions
+      - task: build-args
+      - cmd: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="${BUILD_ARGS}" -o build/uds ./cmd/uds
+
+  - name: build-cli-linux-arm
+    description: build the CLI for Linux ARM64
+    actions:
+      - task: get-versions
+      - task: build-args
+      - cmd: CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="${BUILD_ARGS}" -o build/uds-arm ./cmd/uds
+
+  - name: build-cli-mac-intel
+    description: build the CLI for Mac Intel
+    actions:
+      - task: get-versions
+      - task: build-args
+      - cmd: GOOS=darwin GOARCH=amd64 go build -ldflags="${BUILD_ARGS}" -o build/uds-mac-intel ./cmd/uds
+
+  - name: build-cli-mac-apple
+    description: build the CLI for Mac Apple
+    actions:
+      - task: get-versions
+      - task: build-args
+      - cmd: GOOS=darwin GOARCH=arm64 go build -ldflags="${BUILD_ARGS}" -o build/uds-mac-apple ./cmd/uds
+
+  - name: build-goreleaser
+    description: build the CLI using goreleaser
+    actions:
+      - task: get-versions
+      - cmd: |
+          export ARCHIVES_VERSION=${ARCHIVER_VERSION}
+          goreleaser build --clean --snapshot
+
+  - name: dev-docs
+    description: "Build and preview the docs site using local uds-cli docs"
+    actions:
+      - description: "Cleanup previous runs"
+        cmd: |
+          rm -rf uds-docs
+      - description: "Clone the docs repo and symlink the reference docs"
+        cmd: |
+          git clone https://github.com/defenseunicorns/uds-docs.git uds-docs
+          mkdir -p uds-docs/src/content/docs/cli/main
+          # LikeC4 Vite plugin requires at least one .c4 file or it crashes on startup
+          mkdir -p uds-docs/src/content/docs/.c4
+          printf 'specification {}\n' > uds-docs/src/content/docs/.c4/placeholder.c4
+
+          # Symlink only dirs listed in sidebarOrder (mirrors integration-script cleanup logic)
+          allowed=$(./uds zarf tools yq -r '.sidebarOrder[] | (.dir // .)' docs/docs.config.json)
+          for dir in $(pwd)/docs/*/; do
+            name="$(basename "$dir")"
+            echo "$allowed" | grep -qx "$name" && ln -s "$dir" uds-docs/src/content/docs/cli/main/
+          done
+          # Also symlink the top-level index page if present
+          [ -f "$(pwd)/docs/index.mdx" ] && ln -s "$(pwd)/docs/index.mdx" uds-docs/src/content/docs/cli/main/
+      - description: "Create product config for dev server"
+        cmd: |
+          mkdir -p uds-docs/.product-configs
+
+          jq '. + {repo: "defenseunicorns/uds-cli"}' docs/docs.config.json \
+            > uds-docs/.product-configs/uds-cli.json
+      - description: "Start the docs server with npm (this will run until you stop it)"
+        cmd: |
+          # Actual startup takes up to a minute because of the npm install
+          cd uds-docs && npm i && npm run dev
+
+  - name: uds-docs-validate
+    description: "Validate and build uds-docs with latest uds-cli docs"
+    actions:
+      - description: "Cleanup previous runs"
+        cmd: |
+          rm -rf uds-docs
+      - description: "Clone the docs repo"
+        cmd: git clone https://github.com/defenseunicorns/uds-docs.git uds-docs
+      - description: "UDS Docs Integration Script"
+        cmd: cd uds-docs && npm i && DOCS_OVERRIDES="uds-cli=$(pwd)/.." npm run build

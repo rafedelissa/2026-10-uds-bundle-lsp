@@ -1,0 +1,17 @@
+# Copyright 2024 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+includes:
+  - bar: ./bar.yaml
+
+variables:
+  - name: FOO_VAR
+
+tasks:
+  - name: foobar
+    actions:
+      - cmd: "echo foo"
+      - task: bar:bar
+  - name: fooybar
+    actions:
+      - cmd: echo "${FOO_VAR}"

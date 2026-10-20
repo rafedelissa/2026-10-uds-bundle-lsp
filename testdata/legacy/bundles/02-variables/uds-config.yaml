@@ -1,0 +1,15 @@
+# Copyright 2024 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+options:
+  log_level: debug
+
+shared:
+  domain: burning.boats
+
+variables:
+  output-var:
+    country: Scotland
+    sensitive_var: e2e-sensitive-zarf-value
+  receive-var:
+    precedence: Wales

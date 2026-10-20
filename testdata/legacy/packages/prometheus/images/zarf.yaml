@@ -1,0 +1,16 @@
+# Copyright 2024 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+kind: ZarfPackageConfig
+metadata:
+  name: prometheus-images
+  description: |
+    testing pkg component composition
+  version: 0.0.1
+
+components:
+  - name: upload
+    required: true
+    description: Push quay image to the zarf registry
+    images:
+      - quay.io/prometheus/node-exporter:v1.12.1

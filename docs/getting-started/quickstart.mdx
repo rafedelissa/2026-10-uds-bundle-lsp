@@ -1,0 +1,139 @@
+---
+title: Legacy mode quickstart
+description: Write a uds-bundle.yaml, create a bundle from Zarf packages, and deploy it in a complete end-to-end walkthrough.
+prev: true
+sidebar:
+  order: 2.4
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+## What you'll accomplish
+
+By the end of this quickstart you'll have:
+
+- Written a `uds-bundle.yaml` referencing two Zarf packages
+- Created a bundle locally
+- Deployed it to a Kubernetes cluster
+
+To understand how bundles fit into the UDS ecosystem, see [Bundles](/core/concepts/configuration-and-packaging/bundles/).
+
+## Prerequisites
+
+- [UDS CLI installed](/cli/getting-started/installation/)
+- Access to a Kubernetes cluster
+
+## Steps
+
+<Steps>
+
+1. **Create a `uds-bundle.yaml`**
+
+   Create a new directory and add a `uds-bundle.yaml`:
+
+   ```yaml title="uds-bundle.yaml"
+   kind: UDSBundle
+   metadata:
+     name: my-first-bundle
+     description: A minimal UDS bundle example
+     version: 0.0.1
+
+   packages:
+     - name: init
+       repository: ghcr.io/zarf-dev/packages/init
+       ref: v0.88.0
+       keylessVerification:
+         certificateIdentityRegexp: https://github\.com/zarf-dev/zarf/\.github/workflows/release\.yml@refs/tags/v\d+\.\d+\.\d+
+         certificateOIDCIssuer: https://token.actions.githubusercontent.com
+     - name: dos-games
+       repository: ghcr.io/zarf-dev/packages/dos-games
+       ref: 1.3.0
+       publicKey: |
+         -----BEGIN PUBLIC KEY-----
+         MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAvzCVJ8lhKn7VrH8TyGRq
+         Ie7BZhILJMsEJYUJTI/2meoEqHwsESM606QRIftD9KG3tk7eVA5h9Fnw8hPathwq
+         9HGgfQAwdSUlEZK152u1QRD50elcT2EFs1FcFyFdoSYyORAFwAGY/nsEklfslpbc
+         a7KXOgEMGKbOsdcIMjDzemBL6oyiwUEJWu+ZElCOkRgF7v+VpJhvqlGok2dPcNRt
+         OLML3rU+sKrbsYRR89H32AOrrXnyQ6jHbPQ4DOhVQGGUCpKgHTrdp2Io+8ixEjRr
+         kDm1ya9SzekXf9Yc7pHTjrTF7BkaxfeLKHHqT5DkmLlEjQqmYvvFmfVjrEEFJai4
+         Gseul1aZMPHmLYLjoCeNFbJ9LaJVZ1KLTzPG3Js0lfTInfxMvcp9la2XJwViXvtO
+         uSmVJEMe9bY7lrgwl/X022DArgz5R3EdQW64TLXvtKUQl232cC9wB4p4B5a0Dd+6
+         yTUHHSj+0HpsInJWYk7+IJen8i28AVFdQxXIwI2sfWhwLg/udImhpKZdgRlsscjl
+         +sHpe+RvqCRjKWhbDee/AcvIzvvsJfv+5OkqKlZBAu5NG6zOjDU+eHl1DhSdKsKZ
+         XIhyiT1ZGF9PplLixSjg/9ZkXemg0ImybX/q3kMZiwL5Vii6ZLUUwQ1+SSTazfLg
+         wJLcBrRj83HRenrsBoERXj0CAwEAAQ==
+         -----END PUBLIC KEY-----
+   ```
+
+   This bundle deploys the Zarf init package followed by [dos-games](https://github.com/zarf-dev/zarf/tree/main/examples/dos-games).
+
+2. **Create the bundle**
+
+   From the directory containing your `uds-bundle.yaml`:
+
+   ```bash
+   uds create .
+   ```
+
+   UDS CLI pulls the referenced Zarf packages from their OCI registries and assembles them into a local tarball:
+
+   ```text
+   uds-bundle-my-first-bundle-amd64-0.0.1.tar.zst
+   ```
+
+   > [!TIP]
+   > Add `--confirm` to skip the creation prompt. To create directly into an OCI registry: `uds create . -o ghcr.io/<your-org>/dev`
+
+3. **Deploy the bundle**
+
+   ```bash
+   uds deploy uds-bundle-my-first-bundle-amd64-0.0.1.tar.zst --confirm
+   ```
+
+   > [!TIP]
+   > Omit `--confirm` to see a pre-deploy summary of all packages, overrides, and variables before confirming.
+
+   To deploy from an OCI registry instead:
+
+   ```bash
+   uds deploy ghcr.io/<your-org>/dev/my-first-bundle:0.0.1 --confirm
+   ```
+
+</Steps>
+
+## Verification
+
+After deployment, confirm the pods are running:
+
+```bash
+uds zarf tools kubectl get pods -A
+```
+
+> [!NOTE]
+> A UDS Bundle is an OCI artifact containing one or more Zarf packages and a `uds-bundle.yaml` manifest. The manifest is entirely declarative; UDS CLI will not prompt for optional Zarf components at deploy time. To include an optional component, list it explicitly with `optionalComponents`.
+
+## Troubleshooting
+
+### Problem: Bundle architecture mismatch
+
+**Symptom:** `bundle architecture mismatch` error during deploy.
+
+**Solution:** Use `-a amd64` or `-a arm64` to specify the target architecture explicitly.
+
+### Problem: OCI pull errors
+
+**Symptom:** Errors pulling packages from an OCI registry.
+
+**Solution:** Verify registry credentials with `uds zarf tools registry login`.
+
+### Problem: Package deploy timeout
+
+**Symptom:** A package deployment times out before completing.
+
+**Solution:** Set `timeout` on the package in `uds-bundle.yaml` (e.g., `timeout: 10m`). To retrieve logs from the most recent operation, run `uds logs`.
+
+## Related documentation
+
+- [Use Bundle Overrides](/cli/how-to-guides/use-bundle-overrides/): Customize package configuration at deploy time without modifying the bundle.
+- [Use UDS Runner](/cli/how-to-guides/use-uds-runner/): Automate tasks with UDS Runner's built-in task execution.
+- [Monitor a Cluster](/cli/how-to-guides/monitor-cluster/): Inspect running workloads and Pepr events from the CLI.

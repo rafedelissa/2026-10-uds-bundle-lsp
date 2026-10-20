@@ -1,0 +1,33 @@
+# Copyright 2024 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+kind: ZarfPackageConfig
+metadata:
+  name: helm-overrides
+  description: Zarf pkg with a Helm chart to test Helm overrides in the uds-bundle.yaml
+  version: 0.0.1
+
+variables:
+  - name: DOMAIN
+    default: uds.dev
+
+components:
+  - name: podinfo-component
+    required: true
+    images:
+      # renovate: datasource=github-tags depName=stefanprodan/podinfo
+      - ghcr.io/stefanprodan/podinfo:6.15.0
+    charts:
+      - name: unicorn-podinfo
+        localPath: ./unicorn-podinfo
+        namespace: podinfo
+        version: 0.0.1
+      - name: second-chart
+        localPath: ./second-chart
+        namespace: second-chart
+        version: 0.0.1
+    actions:
+      onDeploy:
+        after:
+          - cmd: |
+              echo "shared var in helm-overrides pkg: "${ZARF_VAR_DOMAIN}""

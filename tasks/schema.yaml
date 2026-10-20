@@ -1,0 +1,19 @@
+# Copyright 2024-2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+tasks:
+  - name: update
+    description: updates the JSON schema
+    actions:
+      - cmd: ./hack/generate-schema.sh
+
+  - name: test
+    description: tests if the schema has been modified
+    actions:
+      - task: update
+      - cmd: |
+          if ! git diff --quiet -- uds.schema.json zarf.schema.json tasks.schema.json; then
+            echo "Schema changes found; run 'uds run schema:update' and include the generated files."
+            git diff --stat -- uds.schema.json zarf.schema.json tasks.schema.json
+            exit 1
+          fi

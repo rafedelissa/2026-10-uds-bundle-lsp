@@ -1,0 +1,43 @@
+---
+title: Reference
+description: Index of UDS CLI reference material covering command syntax, configuration schemas, and IDE setup for validation and autocompletion.
+sidebar:
+  order: 4.1
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Authoritative details for UDS CLI configuration surfaces, command syntax, and schema validation. Use this section when you need exact flag behavior, field-level schema details, or IDE setup instructions.
+
+<CardGrid>
+  <LinkCard
+    title="CLI Commands"
+    description="Full command reference for all UDS CLI commands, flags, and usage examples."
+    href="/cli/reference/commands/uds/"
+  />
+  <LinkCard
+    title="Schema Validation & IDE Setup"
+    description="JSON schemas for uds-bundle.yaml and tasks.yaml with autocompletion and inline validation setup for VS Code, JetBrains, and other editors."
+    href="/cli/reference/schema-validation/"
+  />
+  <LinkCard
+    title="Next - UDS CLI mode"
+    description="Reference for why Next mode exists, what the alpha preview currently supports, and how Next bundles work."
+    href="/cli/reference/next-mode/"
+  />
+  <LinkCard
+    title="Next - bundle.uds.hcl"
+    description="Reference for Next bundle definitions, package sources, dependencies, values, and package signature policies."
+    href="/cli/reference/next/bundle-uds-hcl/"
+  />
+  <LinkCard
+    title="Next - config.uds.hcl"
+    description="Reference for Next deploy-time options, signature trust, variables, and configuration precedence."
+    href="/cli/reference/next/config-uds-hcl/"
+  />
+  <LinkCard
+    title="Choose a deployment tool"
+    description="Choose the UDS workflow that matches how your team plans, releases, and operates applications."
+    href="/cli/reference/choose-a-deployment-tool/"
+  />
+</CardGrid>

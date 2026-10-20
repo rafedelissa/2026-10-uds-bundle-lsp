@@ -1,0 +1,25 @@
+# Copyright 2024 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+kind: ZarfPackageConfig
+metadata:
+  name: output-var-collision
+  description: |
+    Exports variable with same name as variable exported from output-var package
+  version: 0.0.1
+
+variables:
+  - name: COUNTRY
+    default: Wales
+  - name: FLOWER
+    default: Daffodils
+
+components:
+  - name: echo
+    required: true
+    actions:
+      onDeploy:
+        after:
+          - cmd: echo ""${ZARF_VAR_FLOWER}" are the national flower of "${ZARF_VAR_COUNTRY}""
+            setVariables:
+              - name: OUTPUT

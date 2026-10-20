@@ -1,0 +1,142 @@
+# Copyright 2024-2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+# Build a universal macOS binary
+universal_binaries:
+  - replace: false
+
+# Build the different combination of goos/arch binaries
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    ldflags:
+      - -s -w
+      - -X 'github.com/defenseunicorns/uds-cli/pkg/legacy/config.CLIVersion=v{{.Version}}'
+      - -X 'github.com/defenseunicorns/uds-cli/internal/version.Version=v{{.Version}}'
+      - -X 'github.com/defenseunicorns/uds-cli/internal/version.GitCommit={{.FullCommit}}'
+      - -X 'github.com/defenseunicorns/uds-cli/internal/version.BuildDate={{.Date}}'
+      - -X 'github.com/zarf-dev/zarf/src/config.ActionsCommandZarfPrefix=zarf'
+      - -X 'github.com/zarf-dev/zarf/src/config.CLIVersion={{.Env.ZARF_VERSION}}'
+      - -X 'k8s.io/component-base/version.gitVersion=v{{.Env.K8S_MODULES_MAJOR_VER}}.{{.Env.K8S_MODULES_MINOR_VER}}.{{.Env.K8S_MODULES_PATCH_VER}}'
+      - -X 'k8s.io/component-base/version.gitCommit={{.FullCommit}}'
+      - -X 'k8s.io/component-base/version.buildDate={{.Date}}'
+      - -X 'helm.sh/helm/v3/pkg/chartutil.k8sVersionMajor={{.Env.K8S_MODULES_MAJOR_VER}}'
+      - -X 'helm.sh/helm/v3/pkg/chartutil.k8sVersionMinor={{.Env.K8S_MODULES_MINOR_VER}}'
+      - -X 'github.com/derailed/k9s/cmd.version={{.Env.K9S_VERSION}}'
+      - -X 'github.com/google/go-containerregistry/cmd/crane/cmd.Version={{.Env.CRANE_VERSION}}'
+      - -X 'github.com/zarf-dev/zarf/src/cmd.syftVersion={{.Env.SYFT_VERSION}}'
+      - -X 'github.com/zarf-dev/zarf/src/cmd.archivesVersion={{.Env.ARCHIVES_VERSION}}'
+      - -X 'helm.sh/helm/v4/internal/version.version={{.Env.HELM_VERSION}}'
+    goarch:
+      - amd64
+      - arm64
+    binary: uds
+    main: ./cmd/uds
+
+# Build native Linux packages from the release binaries
+nfpms:
+  - id: linux-packages
+    package_name: uds-cli
+    file_name_template: "{{ .PackageName }}-v{{ .Version }}-{{ .Arch }}"
+    vendor: Defense Unicorns
+    homepage: https://github.com/defenseunicorns/uds-cli
+    maintainer: Defense Unicorns <support@defenseunicorns.com>
+    description: CLI for creating, publishing, and deploying UDS bundles.
+    license: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/bin
+    section: utils
+    release: 1
+    mtime: "{{ .CommitDate }}"
+
+# Save the built artifacts as binaries (instead of wrapping them in a tarball)
+archives:
+  - formats: binary
+    name_template: "{{ .ProjectName }}_v{{ .Version }}_{{- title .Os }}_{{ .Arch }}"
+
+# generate a sha256 checksum of all release artifacts
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+# generate sboms for each binary artifact
+sboms:
+  - artifacts: binary
+    documents:
+      - "sbom_{{ .ProjectName }}_{{ .Tag }}_{{- title .Os }}_{{ .Arch }}.sbom"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+
+# Use the auto-generated changelog github provides
+changelog:
+  use: github-native
+
+brews:
+  - name: uds
+    repository:
+      owner: defenseunicorns
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      branch: "{{ .ProjectName }}-{{ .Tag }}"
+      pull_request:
+        enabled: true
+        base:
+          branch: main
+          owner: defenseunicorns
+          name: homebrew-tap
+    commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
+    homepage: "https://github.com/defenseunicorns/uds-cli"
+    description: "CLI for Unicorn Delivery Service"
+
+  # NOTE: We are using .Version instead of .Tag because homebrew has weird semver parsing rules and won't be able to
+  #       install versioned releases that has a `v` character before the version number.
+  - name: "uds@{{ .Version }}"
+    repository:
+      owner: defenseunicorns
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      branch: "{{ .ProjectName }}-{{ .Tag }}"
+      pull_request:
+        enabled: true
+        base:
+          branch: main
+          owner: defenseunicorns
+          name: homebrew-tap
+    commit_msg_template: "Brew formula update for {{ .ProjectName }} versioned release {{ .Tag }}"
+    homepage: "https://github.com/defenseunicorns/uds-cli"
+    description: "CLI for Unicorn Delivery Service"
+
+# Generate a GitHub release and publish the release for the tag
+release:
+  github:
+    owner: defenseunicorns
+    name: uds-cli
+  prerelease: auto
+  mode: append
+  draft: false
+
+git:
+  # What should be used to sort tags when gathering the current and previous
+  # tags if there are more than one tag in the same commit.
+  #
+  # Default: '-version:refname'.
+  tag_sort: -version:creatordate
+
+  # Tags to be ignored by GoReleaser.
+  # This means that GoReleaser will not pick up tags that match any of the
+  # provided values as either previous or current tags.
+  #
+  # Templates: allowed.
+  ignore_tags:
+    - v*-snapshot*

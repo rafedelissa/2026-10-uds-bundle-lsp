@@ -1,0 +1,64 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+name: CI Docs
+
+# Permissions for the GITHUB_TOKEN used by the workflow.
+permissions:
+  contents: read # Allows reading the content of the repository.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - "**.md"
+      - "**.mdx"
+      - "**.jpg"
+      - "**.png"
+      - "**.gif"
+      - "**.svg"
+      - docs/**
+      - .vscode/**
+      - .gitignore
+      - renovate.json
+      - CODEOWNERS
+      - LICENSE
+      - hack/generate-docs.sh
+      - hack/test-docs.sh
+      - .github/workflows/docs-shim.yaml
+
+jobs:
+  docs-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup development tools
+        uses: ./.github/actions/mise
+
+      - name: Test docs
+        run: uds run docs:test
+
+      - name: Save logs
+        if: always()
+        uses: ./.github/actions/save-logs
+        with:
+          suffix: validate-docs
+
+  docs-link-check:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup development tools
+        uses: ./.github/actions/mise
+
+      - name: Check UDS Docs links
+        run: uds run uds-docs-validate
+
+  # Shim required checks so docs-only PRs can merge without running full E2E CI
+  checks:
+    uses: ./.github/workflows/test-shim.yaml

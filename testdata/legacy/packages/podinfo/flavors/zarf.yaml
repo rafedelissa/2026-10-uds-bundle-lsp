@@ -1,0 +1,52 @@
+# Copyright 2024 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+kind: ZarfPackageConfig
+metadata:
+  name: podinfo
+  version: 0.0.1
+
+components:
+  - name: podinfo-flavor
+    required: true
+    only:
+      flavor: patchVersion2
+    charts:
+      - name: podinfo
+        version: 6.15.0
+        namespace: podinfo-flavor
+        url: https://github.com/stefanprodan/podinfo.git
+        gitPath: charts/podinfo
+    images:
+      - ghcr.io/stefanprodan/podinfo:6.15.0
+    actions:
+      onDeploy:
+        after:
+          - wait:
+              cluster:
+                kind: deployment
+                name: podinfo
+                namespace: podinfo-flavor
+                condition: available
+
+  - name: podinfo-flavor
+    required: true
+    only:
+      flavor: patchVersion3
+    charts:
+      - name: podinfo
+        version: 6.15.0
+        namespace: podinfo-flavor
+        url: https://github.com/stefanprodan/podinfo.git
+        gitPath: charts/podinfo
+    images:
+      - ghcr.io/stefanprodan/podinfo:6.15.0
+    actions:
+      onDeploy:
+        after:
+          - wait:
+              cluster:
+                kind: deployment
+                name: podinfo
+                namespace: podinfo-flavor
+                condition: available

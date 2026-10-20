@@ -1,0 +1,22 @@
+# Copyright 2024 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+kind: ZarfPackageConfig
+metadata:
+  name: uds-podinfo
+  description: |
+    Podinfo with UDS Exemptions to test with UDS Engine
+
+components:
+  - name: podinfo
+    required: true
+    charts:
+      - name: podinfo
+        version: 6.15.0
+        namespace: podinfo
+        url: https://github.com/stefanprodan/podinfo.git
+        gitPath: charts/podinfo
+        valuesFiles:
+          - ./podinfo-values.yaml
+    images:
+      - ghcr.io/stefanprodan/podinfo:6.15.0

@@ -1,0 +1,13 @@
+# Copyright 2024 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+kind: UDSBundle
+metadata:
+  name: gitrepo
+  description: tests that the gitrepo from Zarf init works as expected
+  version: 0.0.1
+
+packages:
+  - name: gitrepo
+    path: "../../packages/gitrepo"
+    ref: 0.0.1

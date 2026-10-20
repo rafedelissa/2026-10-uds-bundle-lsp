@@ -1,0 +1,78 @@
+# Copyright 2024 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+name: Dependency Check
+on: pull_request
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Dependency Review
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          # TODO: Remove after upgrading github.com/containerd/containerd to >= 1.7.33
+          # uds is unaffected because we do not make use of the CRI, this is an indirect dependency
+          # of zarf->helm->k9s->containerd/containerd
+          allow-ghsas: GHSA-xhf5-7wjv-pqxp
+  grype-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        id: scan
+        with:
+          path: "."
+          fail-build: true
+          severity-cutoff: critical
+          output-format: json
+          output-file: "grype-scan.json"
+
+      - name: Output Grype Scan Report
+        if: always()
+        # file name 'grype-scan.json' is defined in .grype.yaml
+        run: jq . grype-scan.json
+
+      - name: Upload Grype Scan Report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: grype-scan-report
+          path: grype-scan.json
+          retention-days: 10
+          overwrite: "true"
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Get Go version
+        run: sed -En 's/^go (.*)$/GO_VERSION=\1/p' go.mod >> $GITHUB_ENV
+
+      - id: govulncheck
+        uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
+        with:
+          go-version-input: "${{ env.GO_VERSION }}"
+          # Default output format is 'text'. Specifying the output format 'json' or 'sarif' will return success
+          #even if there are some vulnerabilities detected.
+          output-format: json
+          output-file: govulncheck.json
+
+      - name: Upload Govulncheck Report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: govulncheck-report
+          path: govulncheck.json
+          retention-days: 10
+          overwrite: "true"

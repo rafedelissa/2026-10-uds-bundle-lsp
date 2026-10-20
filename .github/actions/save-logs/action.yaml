@@ -1,0 +1,64 @@
+# Copyright 2025-2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+name: save-logs
+description: Save suite-aware test diagnostics without requiring a cluster
+
+inputs:
+  suffix:
+    description: Test suite name appended to the diagnostic artifact
+    required: false
+    default: test
+
+runs:
+  using: composite
+  steps:
+    - name: Collect diagnostics
+      shell: bash
+      env:
+        DIAGNOSTICS_DIR: ${{ runner.temp }}/uds-test-diagnostics/${{ inputs.suffix }}
+      run: |
+        mkdir -p "$DIAGNOSTICS_DIR"
+
+        # Preserve the command transcript created by the workflow, when present.
+        if [ -f "${RUNNER_TEMP}/uds-command-${{ inputs.suffix }}.log" ]; then
+          cp "${RUNNER_TEMP}/uds-command-${{ inputs.suffix }}.log" "$DIAGNOSTICS_DIR/command-transcript.log"
+        fi
+
+        # Capture test workspaces that survived a failed run.
+        find "${RUNNER_TEMP}" /tmp -maxdepth 2 -type d \
+          \( -name 'uds-cli-*' -o -name 'uds-smoke-*' -o -name 'uds-bootstrap-*' \) \
+          -print > "$DIAGNOSTICS_DIR/test-workspaces.txt" 2>/dev/null || true
+
+        mkdir -p "$DIAGNOSTICS_DIR/kubernetes"
+        if command -v kubectl >/dev/null 2>&1 && kubectl cluster-info >/dev/null 2>&1; then
+          kubectl get nodes -o wide > "$DIAGNOSTICS_DIR/kubernetes/nodes.txt" 2>&1 || true
+          kubectl get pods -A -o wide > "$DIAGNOSTICS_DIR/kubernetes/pods.txt" 2>&1 || true
+          kubectl get events -A --sort-by=.lastTimestamp > "$DIAGNOSTICS_DIR/kubernetes/events.txt" 2>&1 || true
+        fi
+
+        mkdir -p "$DIAGNOSTICS_DIR/docker"
+        if command -v docker >/dev/null 2>&1; then
+          docker ps -a > "$DIAGNOSTICS_DIR/docker/containers.txt" 2>&1 || true
+          docker ps -a --filter name=k3d --format '{{.Names}}' | while read -r container; do
+            [ -n "$container" ] || continue
+            docker logs "$container" > "$DIAGNOSTICS_DIR/docker/${container}.log" 2>&1 || true
+          done
+        fi
+
+        if command -v k3d >/dev/null 2>&1; then
+          k3d cluster list > "$DIAGNOSTICS_DIR/k3d-clusters.txt" 2>&1 || true
+        fi
+
+        mkdir -p "$DIAGNOSTICS_DIR/tool-logs"
+        find /tmp "${RUNNER_TEMP}" -maxdepth 3 -type f \
+          \( -name 'zarf-*.log' -o -name 'uds-*.log' -o -name 'maru-*.log' -o -name 'debug-*.log' -o -name 'k3d-*.log' \) \
+          -exec cp {} "$DIAGNOSTICS_DIR/tool-logs/" \; 2>/dev/null || true
+
+    - name: Upload diagnostics
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: test-diagnostics-${{ inputs.suffix }}
+        path: ${{ runner.temp }}/uds-test-diagnostics/${{ inputs.suffix }}
+        if-no-files-found: ignore
+        retention-days: 7

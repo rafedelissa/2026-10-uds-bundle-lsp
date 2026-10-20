@@ -1,0 +1,12 @@
+# Copyright 2024 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+paths-ignore:
+  - pkg/legacy/config/lang/lang.go
+  - pkg/legacy/config/config.go
+  - docs-website/**
+  - build/**
+
+query-filters:
+  - exclude:
+      id: go/path-injection

@@ -1,0 +1,78 @@
+amends "package://github.com/jdx/hk/releases/download/v2.0.0/hk@2.0.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v2.0.0/hk@2.0.0#/Builtins.pkl"
+
+local checks = new Mapping<String, Step> {
+    ["check-added-large-files"] {
+        check = "hk util check-added-large-files --maxkb=1024 {{files}}"
+        glob = List("**/*")
+        exclude = List("build/**", "vendor/**")
+    }
+    ["check-merge-conflict"] {
+        check = "hk util check-merge-conflict {{files}}"
+        glob = List("**/*")
+        exclude = List("build/**", "vendor/**")
+    }
+    ["detect-private-key"] {
+        check = "hk util detect-private-key {{files}}"
+        glob = List("**/*")
+        exclude = List("build/**", "vendor/**")
+    }
+    ["detect-secrets"] {
+        check = "gitleaks detect --source . --no-git --redact --no-banner --exit-code 1"
+        glob = List("**/*")
+        exclude = List("build/**", "vendor/**", "uds-docs/**")
+    }
+    ["end-of-file-fixer"] = (Builtins.newlines) {
+        exclude = List("docs/reference/commands/**", "build/**", "vendor/**")
+    }
+    ["fix-byte-order-marker"] = (Builtins.byte_order_marker) {
+        exclude = List("build/**", "vendor/**")
+    }
+    ["trailing-whitespace"] = (Builtins.trailing_whitespace) {
+        exclude = List("build/**", "vendor/**", "design-docs/template.md", "docs/adr/0004-tui.md")
+    }
+    ["golangci-lint"] {
+        check = "golangci-lint run ./..."
+        fix = "golangci-lint run --fix ./..."
+        glob = List("**/*.go", "go.mod", "go.sum")
+    }
+    ["go-mod-tidy"] {
+        check = "go mod tidy -diff"
+        fix = "go mod tidy"
+        glob = List("**/*.go", "go.mod", "go.sum")
+    }
+    ["renovate-config"] {
+        check = "uds run -f tasks/lint.yaml common:renovate"
+        glob = List("renovate.json")
+    }
+    ["schema"] {
+        check = "uds run schema:test"
+        glob = List("cmd/**/*.go", "internal/**/*.go", "pkg/**/*.go", "hack/generate-schema.sh", "tasks/schema.yaml")
+    }
+    ["license-check"] {
+        check = "scan_dir=$(mktemp -d) && trap 'rm -rf \"$scan_dir\"' EXIT && git archive --format=tar HEAD -- . ':(exclude)vendor' | tar -x -C \"$scan_dir\" && cd \"$scan_dir\" && uds run lint:license"
+        fix = "uds run lint:fix-license"
+        glob = List("**/*")
+        exclude = List("build/**", "vendor/**")
+    }
+}
+
+hooks {
+    ["pre-commit"] {
+        fix = true
+        stash = "git"
+        steps = checks
+    }
+    ["check"] {
+        steps = new Mapping<String, Step> {
+            ...checks
+            ["migration-skill"] {
+                check = "uds run generate:check-migration-skill"
+            }
+        }
+    }
+    ["fix"] {
+        fix = true
+        steps = checks
+    }
+}

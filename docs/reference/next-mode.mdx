@@ -1,0 +1,284 @@
+---
+title: UDS CLI Next mode
+description: Explore the UDS CLI Next alpha mode, its purpose, and its current capabilities.
+sidebar:
+  order: 4.200
+---
+
+UDS CLI Next is the next-generation implementation of UDS CLI. It is available as an alpha preview behind the `NextMode` feature flag while Legacy mode remains the default.
+
+> [!TIP]
+> Coming from Legacy? [Migrate a legacy bundle to UDS CLI Next](/cli/how-to-guides/migrate-legacy-to-next/) walks through the commands, bundle definition, values, and configuration changes.
+
+> [!NOTE]
+> More task-focused UDS CLI Next documentation will be added as the mode matures. For now, treat this page as a reference for why Next exists and what it can currently do.
+
+## Why UDS CLI Next mode exists
+
+UDS CLI Next mode is designed to support the next phase of UDS bundle workflows:
+
+- [Bundles Next design](#bundles-next-design)
+  - next-generation bundle authoring and artifact structure
+  - self-contained OCI artifacts for registry-backed and offline workflows
+- HCL-based bundle definitions with `bundle.uds.hcl`
+  - reusable `locals` for shared registries, versions, and package names
+  - package dependency ordering with `depends_on`, allowing deployers to run independent packages in parallel for faster deploys
+  - HCL functions that can be extended by UDS CLI, including the supported `file()` function for reading local file contents into bundle, defaults, and config values
+  - clearer validation for required fields, invalid attributes, and invalid types
+- [Zarf package values](https://docs.zarf.dev/ref/package-values/) as a first-class citizen instead of bespoke bundle-level Helm overrides
+- a library-first design that other UDS tools can consume directly
+- stronger artifact integrity, signing, and verification paths
+
+## Bundles Next design
+
+UDS CLI Next implements the Bundles Next design for the next generation of UDS bundles. The previous bundle design fell short as UDS workflows matured: bundle configuration relied on bespoke `overrides`, package contents were hidden behind indirect OCI blob references, bundles did not have a distinct media type for registries to identify, and the artifact shape was harder for downstream tools to parse consistently.
+
+Bundles Next focuses on making bundle artifacts easier for humans, registries, and downstream deployment tools to reason about. Beyond the HCL authoring model above, it defines:
+
+- a bundle-specific OCI media type so registries and tooling can identify UDS bundles directly
+- an artifact layout where package manifests and layers are represented explicitly instead of hidden behind generic blob indirection
+- one bundle artifact that can contain OCI-hosted and local Zarf packages in a consistent internal OCI layout
+- build-time configuration that is sealed into the artifact, plus deploy-time variables for environment-specific values
+- an artifact shape that supports low-side build, high-side configuration, and high-side deployment workflows
+
+When a bundle is pushed to an OCI registry, the tag resolves to a root OCI index. The root index selects the requested architecture and points at a child index for that architecture. Each child index is the canonical single-architecture bundle artifact and directly references the bundle definition plus the included Zarf package content:
+
+```text title="OCI registry layout"
+oci://registry.example.com/my-org/my-app:1.0.0
+└── root OCI index
+    ├── linux/amd64 child index
+    │   └── artifactType: application/vnd.defenseunicorns.uds.bundle.v1
+    │       ├── bundle definition manifest
+    │       │   ├── bundle.uds.hcl
+    │       │   ├── defaults.uds.hcl
+    │       │   ├── values/package_id/0.yaml
+    │       │   ├── oci/oci-layout
+    │       │   └── oci/index.json
+    │       ├── Zarf package manifest: package-a
+    │       │   ├── package config blob
+    │       │   └── package layer blobs
+    │       └── Zarf package manifest: package-b
+    │           ├── package config blob
+    │           └── package layer blobs
+    └── linux/arm64 child index
+        └── artifactType: application/vnd.defenseunicorns.uds.bundle.v1
+            ├── bundle definition manifest
+            ├── Zarf package manifest: package-a
+            └── Zarf package manifest: package-b
+```
+
+This layout makes package content explicit and inspectable while keeping the bundle self-contained for registry-backed and offline workflows. Tags can point at multiple architecture-specific child indexes, while digest-pinned references can address a single child index directly. Registry-backed packages and local Zarf packages are normalized into the same internal OCI layout, so downstream tooling can consume one consistent artifact shape.
+
+## Mode status
+
+| Mode | Status | Notes |
+| --- | --- | --- |
+| Legacy | Default | Existing `uds-bundle.yaml` workflows continue to work. |
+| Next | Alpha preview | Enabled with `NextMode`; command coverage is still expanding. |
+
+UDS CLI Next mode is planned to become the default in beta. Legacy mode will be removed after the beta migration window.
+
+## Current capabilities
+
+UDS CLI Next mode currently supports the core bundle flows needed to exercise HCL bundles and artifact-based deployment:
+
+| Capability | Current support |
+| --- | --- |
+| Bundle definition format | `bundle.uds.hcl` using the Next HCL bundle schema |
+| Development deployment | Deploy directly from a bundle definition with `uds bundle dev deploy` |
+| Development removal | Remove directly from a bundle definition with `uds bundle dev remove` |
+| Bundle artifact creation | Create local bundle artifacts with `uds bundle create` |
+| Bundle artifact deployment | Deploy created local artifacts or OCI references with `uds bundle deploy` |
+| Bundle artifact removal | Remove using created local artifacts or OCI references with `uds bundle remove` |
+| Package verification | Verify package signatures when configured by the bundle definition |
+| Bundle signing | Create signed bundles when signing options are configured, or unsigned bundles for local alpha workflows |
+| Bundle signature verification | Verify signed bundle artifacts during deploy, with an explicit skip flag available for unsigned local artifacts |
+| Retained Legacy commands | Non-bundle commands that are still needed during migration remain available in Next mode |
+
+## Enabling UDS CLI Next mode
+
+UDS CLI Next mode can be enabled per command with the `NextMode` feature flag:
+
+```bash
+uds --features=NextMode=true version
+CLI_FEATURES=NextMode=true uds version
+```
+
+`CLI_FEATURES` and `--features` configure UDS only when they appear before a
+Zarf command. Arguments after `uds zarf`/`uds z` or `uds tools zarf`/`uds
+tools z` are passed to Zarf unchanged, including Zarf's own `--features` and
+`ZARF_FEATURES` settings.
+
+All UDS CLI Next bundle definition files must be named `bundle.uds.hcl`.
+
+## Bundle quick start
+
+This quickstart creates a local k3d cluster with the UDS k3d package, initializes Zarf, and deploys podinfo.
+
+Prerequisites: Docker and k3d must be installed and running.
+
+Create `bundle.uds.hcl`:
+
+```hcl title="bundle.uds.hcl"
+uds {
+  bundle_api_version = "uds.dev/v1alpha1"
+}
+
+metadata {
+  name        = "next-quickstart"
+  description = "UDS CLI Next mode quickstart bundle"
+  version     = "0.1.0"
+}
+
+package "uds_k3d_dev" {
+  source = "oci://ghcr.io/defenseunicorns/packages/uds-k3d:0.21.2"
+  signature_verification { verify = false }
+}
+
+package "init" {
+  source = "oci://ghcr.io/zarf-dev/packages/init:v0.88.0"
+  signature_verification {
+    keyless {
+      certificate_identity_regexp = "https://github\\.com/zarf-dev/zarf/\\.github/workflows/release\\.yml@refs/tags/v\\d+\\.\\d+\\.\\d+"
+      certificate_oidc_issuer      = "https://token.actions.githubusercontent.com"
+    }
+  }
+  depends_on = [package.uds_k3d_dev]
+}
+
+package "podinfo" {
+  source = "oci://ghcr.io/defenseunicorns/uds-cli/podinfo:0.0.2"
+  signature_verification { verify = false }
+  depends_on = [package.init]
+}
+```
+
+Deploy directly from the bundle definition during development:
+
+```bash
+CLI_FEATURES=NextMode=true uds bundle dev deploy .
+```
+
+Or create an unsigned bundle artifact and deploy it:
+
+```bash
+CLI_FEATURES=NextMode=true uds bundle create --unsigned .
+CLI_FEATURES=NextMode=true uds bundle deploy ./uds-bundle-next-quickstart-<ARCH>-0.1.0.tar.zst --skip-signature-verification
+```
+
+Replace `ARCH` with the bundle architecture, such as `amd64` or `arm64`.
+
+The `--unsigned` flag is required here because this quickstart does not configure bundle signing. Deploying the unsigned artifact requires `--skip-signature-verification`.
+
+## Bundle file structure
+
+`bundle.uds.hcl` defines the bundle metadata and package membership. Package membership is implicit: every `package "<id>"` block is part of the bundle. See the [`bundle.uds.hcl` reference](/cli/reference/next/bundle-uds-hcl/) for the schema and package signature policy.
+
+For the end-to-end artifact signing and verification workflow, see [Sign and verify a bundle in Next mode](/cli/how-to-guides/next/sign-bundle-artifacts/).
+
+## HCL helpers
+
+Next mode supports `locals` and `file(path)` in its HCL files. See the [`bundle.uds.hcl` reference](/cli/reference/next/bundle-uds-hcl/) and [`config.uds.hcl` reference](/cli/reference/next/config-uds-hcl/) for syntax, supported files, and path resolution.
+
+## CLI commands
+
+Use these commands to create, inspect, transfer, deploy, and manage Next-mode bundle artifacts.
+
+| Command | Description |
+| --- | --- |
+| `uds bundle create [directory]` | Create a bundle artifact from a directory containing `bundle.uds.hcl`. |
+| `uds bundle inspect <bundle-reference>` | Display metadata and packages from a local `.tar.zst` or OCI bundle artifact. |
+| `uds bundle push <bundle-tarball> <oci-reference>` | Push a bundle artifact to an OCI registry. |
+| `uds bundle pull <ref>` | Pull a bundle artifact from an OCI registry. |
+| `uds bundle dev deploy [path]` | Deploy directly from a bundle definition or its directory. Defaults to the current directory. |
+| `uds bundle deploy <artifact>` | Deploy a created local `.tar.zst` or OCI bundle artifact. |
+| `uds bundle dev remove [path]` | Remove directly from a bundle definition or its directory. Defaults to the current directory. |
+| `uds bundle remove <artifact>` | Remove using a created local `.tar.zst` or OCI bundle artifact. |
+| `uds bundle sign <bundle-artifact>` | Sign a created bundle artifact. |
+| `uds bundle verify <bundle-artifact>` | Verify a created bundle artifact signature. |
+| `uds bundle reconfigure <source> --defaults <defaults-file>` | Reconfigure bundle defaults from a local artifact or OCI reference and produce a derivative artifact. |
+
+### Global bundle flags
+
+These flags apply to all `uds bundle` subcommands:
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `-a`, `--architecture` | host arch | Target CPU architecture, such as `amd64` or `arm64`. |
+| `-o`, `--output` | `text` | Output format: `text`, `json`, or `yaml`. |
+| `--plain-http` | `false` | Allow plain HTTP for a registry only when HTTPS is unavailable. |
+| `--skip-tls-verify` | `false` | Skip TLS certificate verification. |
+| `--tmp-dir` | system temp | Directory for temporary working files. |
+| `--concurrency` | `10` | Degree of parallelism for concurrent operations. For deploy, applies within a dependency level. |
+| `--config` | none | Path to `config.uds.hcl` for deploy-time variables and options. |
+| `--prompt` | `false` | Enable interactive confirmation before package deployment or removal begins. |
+
+> [!NOTE]
+> `--plain-http` does not force HTTP. It allows HTTP only after confirming a registry does not support HTTPS.
+
+## Deploying a bundle
+
+Use `uds bundle dev deploy` to deploy directly from a bundle definition while authoring a bundle. Use `uds bundle deploy` for a created local or OCI artifact. Both commands are non-interactive by default and deploy packages within dependency levels in parallel. See [Deploy a bundle in Next mode](/cli/how-to-guides/next/deploy-a-bundle/) for the procedure, flags, and verification steps.
+
+## Removing a bundle
+
+Use `uds bundle dev remove` to remove packages from a bundle definition while developing locally. Use `uds bundle remove` for a created local or OCI artifact. Packages are removed in reverse dependency order, and removal of a package with dependents is blocked unless `--force` is supplied. See [Remove a bundle in Next mode](/cli/how-to-guides/next/remove-a-bundle/) for the procedure, flags, and signature-verification behavior.
+
+## Deploy-time configuration
+
+Pass a `config.uds.hcl` file with `--config` to provide deploy-time variables and operation options without modifying the bundle. See the [`config.uds.hcl` reference](/cli/reference/next/config-uds-hcl/) for supported fields, signature trust, and precedence rules.
+
+```bash
+CLI_FEATURES=NextMode=true uds bundle dev deploy --config ./config.uds.hcl
+```
+
+## Bundle-level variable defaults
+
+`defaults.uds.hcl` is auto-discovered beside `bundle.uds.hcl` and provides bundle-provided default variables. It travels with created artifacts and is overridden by consumer values in `config.uds.hcl`. See the [`config.uds.hcl` reference](/cli/reference/next/config-uds-hcl/) for the supported defaults schema and precedence rules.
+
+## Reconfiguring a bundle
+
+Use `uds bundle reconfigure` to replace environment-specific defaults in an existing bundle artifact without rebuilding package content. See [Reconfigure a bundle in Next mode](/cli/how-to-guides/next/reconfigure-a-bundle/) for the procedure and flags.
+
+## Signing and verifying bundle artifacts
+
+Use `uds bundle sign` to add signature evidence to an artifact and `uds bundle verify` to check it before distribution. `uds bundle create` can sign during creation or create an unsigned artifact with `--unsigned`.
+
+For the complete signing, verification, publishing, and deployment workflow, see [Sign and verify a bundle in Next mode](/cli/how-to-guides/next/sign-bundle-artifacts/).
+
+## Publishing and pulling bundle artifacts
+
+Use `uds bundle push` to publish a local bundle artifact and `uds bundle pull` to retrieve one. Pull requires an explicit signature verification policy through `--public-key`, keyless identity and issuer options, or `--config`. Use `--skip-signature-verification` only when intentionally retrieving an unsigned artifact. For the signed artifact workflow, including publishing and pulling, see [Sign and verify a bundle in Next mode](/cli/how-to-guides/next/sign-bundle-artifacts/).
+
+## Inspecting a bundle
+
+The `inspect` command shows metadata from a local `.tar.zst` artifact or an OCI bundle reference. It does not replace bundle signature verification for integrity decisions. See [Inspect and verify a bundle in Next mode](/cli/how-to-guides/next/inspect-verify/) for the procedure and structured-output examples.
+
+## Structured output
+
+Bundle commands that emit result objects support structured output through `--output` or `-o`, including `create`, `inspect`, `pull`, and `reconfigure`:
+
+| Format | Flag | Description |
+| --- | --- | --- |
+| `text` | `-o text` | Human-readable output. |
+| `json` | `-o json` | JSON for scripting and pipelines. |
+| `yaml` | `-o yaml` | YAML for configuration tooling. |
+
+```bash
+# Pipe inspect output to jq
+CLI_FEATURES=NextMode=true uds bundle inspect ./my-bundle.tar.zst -o json | jq '.packages[].name'
+
+# Suppress logs for pure structured output
+CLI_FEATURES=NextMode=true uds bundle inspect ./my-bundle.tar.zst -o json 2>/dev/null
+
+# YAML output for tooling
+CLI_FEATURES=NextMode=true uds bundle create --unsigned -o yaml
+```
+
+Logs always go to stderr. Structured output always goes to stdout. Use `2>/dev/null` to suppress logs when piping stdout.
+
+## Related documentation
+
+- [bundle.uds.hcl](/cli/reference/next/bundle-uds-hcl/) - Schema for bundle definitions, package sources, dependencies, values, and package signature policies.
+- [config.uds.hcl](/cli/reference/next/config-uds-hcl/) - Schema for deploy-time options, variables, signature trust, and precedence.
+- [Sign and verify a bundle in Next mode](/cli/how-to-guides/next/sign-bundle-artifacts/) - Task-oriented workflow for signing, verifying, publishing, and deploying bundle artifacts.

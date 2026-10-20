@@ -1,0 +1,93 @@
+# Copyright 2024 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+version: "2"
+run:
+  concurrency: 8
+  tests: true
+linters:
+  default: none
+  enable:
+    - errcheck
+    - errorlint
+    - goheader
+    - gosec
+    - govet
+    - ineffassign
+    - nilerr
+    - nolintlint
+    - perfsprint
+    - revive
+    - staticcheck
+    - testifylint
+    - unused
+    - whitespace
+  settings:
+    govet:
+      disable:
+        - shadow
+        - fieldalignment
+        - unusedwrite
+      enable-all: true
+    nolintlint:
+      require-specific: true
+    unused:
+      local-variables-are-used: false
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # Legacy exclusions are confined to the moved implementation and tests.
+      - path: ^(pkg/legacy|tests/legacy/e2e)/
+        linters:
+          - errcheck
+          - errorlint
+          - gosec
+          - nolintlint
+          - perfsprint
+          - revive
+      - path: ^(pkg/legacy|tests/legacy/e2e)/.*_test\.go$
+        linters:
+          - whitespace
+      - path: ^(pkg/legacy|tests/legacy/e2e)/
+        linters:
+          - testifylint
+      # Preserve the exported Legacy Viper key names during coexistence.
+      - path: ^internal/legacy/cli/viper\.go$
+        linters:
+          - revive
+      - path: ^internal/legacy/testutil/testutil\.go$
+        linters:
+          - gosec
+      # The pinned Next source is green with its canonical lint set. Keep the
+      # additional Legacy linters enabled everywhere outside its import roots.
+      - path: ^(internal/(artifact|bundle|cli|logger|oci|printer|testutil|zarf)|pkg/(bundle|iostreams)|tests/(cluster|integration|library|smoke|testutil))/
+        linters:
+          - perfsprint
+          - revive
+      - path: ^internal/oci/transfer\.go$
+        linters:
+          - nolintlint
+    paths:
+      - docs/reference/commands
+      - third_party$
+      - builtin$
+      - examples$
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - docs/reference/commands
+      - third_party$
+      - builtin$
+      - examples$

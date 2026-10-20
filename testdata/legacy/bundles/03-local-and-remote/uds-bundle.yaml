@@ -1,0 +1,16 @@
+# Copyright 2024 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+kind: UDSBundle
+metadata:
+  name: test-local-and-remote
+  description: building from local and remote Zarf pkgs
+  version: 0.0.1
+
+packages:
+  - name: nginx
+    repository: ghcr.io/defenseunicorns/uds-cli/nginx
+    ref: 0.0.2
+  - name: podinfo
+    path: "../../packages/podinfo"
+    ref: 0.0.1

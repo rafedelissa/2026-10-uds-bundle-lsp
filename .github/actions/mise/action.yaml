@@ -1,0 +1,33 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+name: Setup mise
+description: Install the repository-pinned development tools
+
+runs:
+  using: composite
+  steps:
+    - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      with:
+        # renovate: datasource=github-releases depName=jdx/mise versioning=semver
+        version: 2026.10.10
+        install: true
+        cache: true
+
+    - name: Locate Go caches
+      id: go-cache
+      shell: bash
+      run: |
+        echo "mod=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+        echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+        echo "version=$(go env GOVERSION)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache Go dependencies and build artifacts
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ${{ steps.go-cache.outputs.mod }}
+          ${{ steps.go-cache.outputs.build }}
+        key: ${{ runner.os }}-go-${{ steps.go-cache.outputs.version }}-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-${{ steps.go-cache.outputs.version }}-

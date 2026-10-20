@@ -1,0 +1,50 @@
+# Copyright 2024 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+kind: ZarfPackageConfig
+metadata:
+  name: output-var
+  description: |
+    Demonstrates a variable set from a uds-config.yaml and then outputted
+  version: 0.0.1
+
+variables:
+  - name: COUNTRY
+    default: Wales
+  - name: ANIMAL # will be set by an env var for testing
+    default: Dragons
+  - name: DOMAIN # shared with receive-var
+    default: uds.dev
+  - name: SPECIFIC_PKG_VAR
+    default: not-set
+  - name: SENSITIVE_VAR
+    sensitive: true
+
+components:
+  - name: echo
+    required: true
+    actions:
+      onDeploy:
+        after:
+          - cmd: echo ""${ZARF_VAR_ANIMAL}" are the national animal of "${ZARF_VAR_COUNTRY}""
+            setVariables:
+              - name: OUTPUT
+          - cmd: echo "England"
+            setVariables:
+              - name: PRECEDENCE # will be overridden in test by the value in uds-config.yaml
+          - cmd: |
+              echo "shared var in output-var pkg: "${ZARF_VAR_DOMAIN}""
+          - cmd: |
+              echo "output-var SPECIFIC_PKG_VAR = "${ZARF_VAR_SPECIFIC_PKG_VAR}""
+          - cmd: echo "orange"
+            setVariables:
+              - name: COLOR
+          - cmd: echo "Annotation"
+            setVariables:
+              - name: ANNOTATION
+          - cmd: echo "defense"
+            setVariables:
+              - name: DEFENSE
+          - cmd: echo "true"
+            setVariables:
+              - name: BOOL
