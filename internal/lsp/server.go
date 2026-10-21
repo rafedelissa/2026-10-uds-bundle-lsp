@@ -37,6 +37,7 @@ func Serve(ctx context.Context, input InterruptibleReader, output io.Writer) err
 	reader := bufio.NewReaderSize(input, maxHeaderLineSize+1)
 	writer := bufio.NewWriter(output)
 	state := stateUninitialized
+	documents := newDocumentStore()
 
 	closeResult := make(chan error, 1)
 	stopClose := context.AfterFunc(ctx, func() {
@@ -74,7 +75,7 @@ func Serve(ctx context.Context, input InterruptibleReader, output io.Writer) err
 			continue
 		}
 
-		shouldExit, nextState, err := handleMessage(writer, msg, state)
+		shouldExit, nextState, err := handleMessage(writer, msg, state, documents)
 		if err != nil {
 			return err
 		}
@@ -88,7 +89,7 @@ func Serve(ctx context.Context, input InterruptibleReader, output io.Writer) err
 	}
 }
 
-func handleMessage(writer *bufio.Writer, msg message, state serverState) (bool, serverState, error) {
+func handleMessage(writer *bufio.Writer, msg message, state serverState, documents *documentStore) (bool, serverState, error) {
 	if msg.Method == "exit" {
 		if msg.ID != nil {
 			return false, state, writeError(writer, msg.ID, codeInvalidRequest, "exit must be a notification")
@@ -132,6 +133,14 @@ func handleMessage(writer *bufio.Writer, msg message, state serverState) (bool, 
 			return false, state, writeError(writer, msg.ID, codeServerNotInitialized, "server not initialized")
 		}
 		return false, stateShutdown, writeResult(writer, msg.ID, null)
+	case "textDocument/didOpen":
+		return handleDocumentNotification(writer, msg, state, documents, documents.didOpen)
+	case "textDocument/didChange":
+		return handleDocumentNotification(writer, msg, state, documents, documents.didChange)
+	case "textDocument/didSave":
+		return handleDocumentNotification(writer, msg, state, documents, documents.didSave)
+	case "textDocument/didClose":
+		return handleDocumentNotification(writer, msg, state, documents, documents.didClose)
 	default:
 		if msg.ID == nil {
 			return false, state, nil
@@ -141,6 +150,27 @@ func handleMessage(writer *bufio.Writer, msg message, state serverState) (bool, 
 		}
 		return false, state, writeError(writer, msg.ID, codeMethodNotFound, "method not found")
 	}
+}
+
+// handleDocumentNotification enforces the notification-only document synchronization contract.
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/#textDocument_synchronization.
+func handleDocumentNotification(
+	writer *bufio.Writer,
+	msg message,
+	state serverState,
+	documents *documentStore,
+	handle func(json.RawMessage) error,
+) (bool, serverState, error) {
+	if msg.ID != nil {
+		return false, state, writeError(writer, msg.ID, codeInvalidRequest, "text document synchronization method must be a notification")
+	}
+	if state != stateInitialized || documents == nil {
+		return false, state, nil
+	}
+	if err := handle(msg.Params); err != nil {
+		return false, state, fmt.Errorf("handle %s notification: %w", msg.Method, err)
+	}
+	return false, state, nil
 }
 
 func writeResult(writer *bufio.Writer, id, result json.RawMessage) error {

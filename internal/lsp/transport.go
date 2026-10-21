@@ -17,6 +17,8 @@ const (
 	maxMessageSize    = 16 << 20
 )
 
+// readMessage reads one Content-Length-framed LSP message.
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/#baseProtocol.
 func readMessage(reader *bufio.Reader) ([]byte, error) {
 	contentLength := -1
 	for {
@@ -67,6 +69,8 @@ func readMessage(reader *bufio.Reader) ([]byte, error) {
 	return payload, nil
 }
 
+// writeResponse writes one Content-Length-framed JSON-RPC response.
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/#baseProtocol.
 func writeResponse(writer *bufio.Writer, value response) error {
 	payload, err := json.Marshal(value)
 	if err != nil {
