@@ -22,7 +22,7 @@ tasks:
       - cmd: mkdir -p build
       - task: get-versions
       - task: build-args
-      - cmd: go build -ldflags="${BUILD_ARGS}" -o build/uds ./cmd/uds
+      - cmd: go build -mod=mod -ldflags="${BUILD_ARGS}" -o build/uds ./cmd/uds && go build -mod=mod -ldflags="${BUILD_ARGS}" -o build/uds-lsp ./cmd/uds-lsp
 
   - name: lint
     description: run repository lint checks
@@ -126,7 +126,7 @@ tasks:
       - task: build-cli-linux-arm
       - task: build-cli-mac-intel
       - task: build-cli-mac-apple
-      - cmd: sha256sum build/* > build/checksums.txt
+      - cmd: sha256sum build/uds build/uds-arm build/uds-mac-intel build/uds-mac-apple > build/checksums.txt
 
   - name: build-cli-linux-amd
     description: build the CLI for Linux AMD64
