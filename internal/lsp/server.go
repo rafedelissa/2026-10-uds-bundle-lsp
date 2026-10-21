@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"github.com/defenseunicorns/uds-cli/pkg/iostreams"
 )
 
 type serverState int
@@ -33,7 +35,8 @@ type InterruptibleReader interface {
 // client sends an exit notification, closes the input stream, or cancels ctx.
 // Serve closes input when ctx is canceled; input must honor the
 // InterruptibleReader contract so that cancellation interrupts an active read.
-func Serve(ctx context.Context, input InterruptibleReader, output io.Writer) error {
+// streams carries lifecycle logs separately from the protocol output.
+func Serve(ctx context.Context, input InterruptibleReader, output io.Writer, streams iostreams.IOStreams) error {
 	reader := bufio.NewReaderSize(input, maxHeaderLineSize+1)
 	writer := bufio.NewWriter(output)
 	state := stateUninitialized
@@ -75,7 +78,7 @@ func Serve(ctx context.Context, input InterruptibleReader, output io.Writer) err
 			continue
 		}
 
-		shouldExit, nextState, err := handleMessage(writer, msg, state, documents)
+		shouldExit, nextState, err := handleMessage(ctx, writer, msg, state, documents, streams)
 		if err != nil {
 			return err
 		}
@@ -89,7 +92,7 @@ func Serve(ctx context.Context, input InterruptibleReader, output io.Writer) err
 	}
 }
 
-func handleMessage(writer *bufio.Writer, msg message, state serverState, documents *documentStore) (bool, serverState, error) {
+func handleMessage(ctx context.Context, writer *bufio.Writer, msg message, state serverState, documents *documentStore, streams iostreams.IOStreams) (bool, serverState, error) {
 	if msg.Method == "exit" {
 		if msg.ID != nil {
 			return false, state, writeError(writer, msg.ID, codeInvalidRequest, "exit must be a notification")
@@ -112,9 +115,33 @@ func handleMessage(writer *bufio.Writer, msg message, state serverState, documen
 		if state != stateUninitialized {
 			return false, state, writeError(writer, msg.ID, codeInvalidRequest, "server already initialized")
 		}
+		var params initializeParams
+		if len(msg.Params) > 0 {
+			if err := json.Unmarshal(msg.Params, &params); err != nil {
+				return false, state, writeError(writer, msg.ID, codeInvalidParams, "invalid initialize parameters")
+			}
+		}
+		name, version := "unknown", "unknown"
+		if params.ClientInfo != nil {
+			if params.ClientInfo.Name != "" {
+				name = params.ClientInfo.Name
+			}
+			if params.ClientInfo.Version != "" {
+				version = params.ClientInfo.Version
+			}
+		}
+		streams.Info("LSP initialize received", "client_name", name, "client_version", version)
+		documents.diagnosticVersionSupport = params.Capabilities.TextDocument.PublishDiagnostics.VersionSupport
 		result, err := json.Marshal(initializeResult{
-			Capabilities: serverCapabilities{},
-			ServerInfo:   serverInfo{Name: "uds-lsp"},
+			Capabilities: serverCapabilities{
+				PositionEncoding: "utf-16",
+				TextDocumentSync: textDocumentSyncOptions{
+					OpenClose: true,
+					Change:    1, // TextDocumentSyncKind.Full
+					Save:      saveOptions{IncludeText: false},
+				},
+			},
+			ServerInfo: serverInfo{Name: "uds-lsp"},
 		})
 		if err != nil {
 			return false, state, fmt.Errorf("encode initialize result: %w", err)
@@ -134,13 +161,13 @@ func handleMessage(writer *bufio.Writer, msg message, state serverState, documen
 		}
 		return false, stateShutdown, writeResult(writer, msg.ID, null)
 	case "textDocument/didOpen":
-		return handleDocumentNotification(writer, msg, state, documents, documents.didOpen)
+		return handleDocumentNotification(ctx, writer, msg, state, documents, documents.didOpen)
 	case "textDocument/didChange":
-		return handleDocumentNotification(writer, msg, state, documents, documents.didChange)
+		return handleDocumentNotification(ctx, writer, msg, state, documents, documents.didChange)
 	case "textDocument/didSave":
-		return handleDocumentNotification(writer, msg, state, documents, documents.didSave)
+		return handleDocumentNotification(ctx, writer, msg, state, documents, documents.didSave)
 	case "textDocument/didClose":
-		return handleDocumentNotification(writer, msg, state, documents, documents.didClose)
+		return handleDocumentNotification(ctx, writer, msg, state, documents, documents.didClose)
 	default:
 		if msg.ID == nil {
 			return false, state, nil
@@ -155,6 +182,7 @@ func handleMessage(writer *bufio.Writer, msg message, state serverState, documen
 // handleDocumentNotification enforces the notification-only document synchronization contract.
 // See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/#textDocument_synchronization.
 func handleDocumentNotification(
+	ctx context.Context,
 	writer *bufio.Writer,
 	msg message,
 	state serverState,
@@ -170,11 +198,11 @@ func handleDocumentNotification(
 	if err := handle(msg.Params); err != nil {
 		return false, state, fmt.Errorf("handle %s notification: %w", msg.Method, err)
 	}
-	return false, state, nil
+	return false, state, documents.publishDiagnostics(ctx, writer, msg.Params)
 }
 
 func writeResult(writer *bufio.Writer, id, result json.RawMessage) error {
-	return writeResponse(writer, response{
+	return writeMessage(writer, response{
 		JSONRPC: jsonRPCVersion,
 		ID:      id,
 		Result:  result,
@@ -182,7 +210,7 @@ func writeResult(writer *bufio.Writer, id, result json.RawMessage) error {
 }
 
 func writeError(writer *bufio.Writer, id json.RawMessage, code int, message string) error {
-	return writeResponse(writer, response{
+	return writeMessage(writer, response{
 		JSONRPC: jsonRPCVersion,
 		ID:      id,
 		Error: &responseError{

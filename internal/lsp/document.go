@@ -5,6 +5,7 @@ package lsp
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 )
 
@@ -20,7 +21,8 @@ type document struct {
 // documentStore tracks documents covered by text document synchronization.
 // See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/#textDocument_synchronization.
 type documentStore struct {
-	documents map[string]document
+	documents                map[string]document
+	diagnosticVersionSupport bool
 }
 
 // textDocumentItem describes a document when it is opened by the client.
@@ -90,7 +92,7 @@ func (s *documentStore) didOpen(params json.RawMessage) error {
 		return fmt.Errorf("decode didOpen parameters: %w", err)
 	}
 	if parsed.TextDocument.URI == "" {
-		return fmt.Errorf("didOpen document URI is required")
+		return errors.New("didOpen document URI is required")
 	}
 	if _, found := s.documents[parsed.TextDocument.URI]; found {
 		return fmt.Errorf("didOpen document %q is already open", parsed.TextDocument.URI)
@@ -120,12 +122,12 @@ func (s *documentStore) didChange(params json.RawMessage) error {
 		return nil
 	}
 	if len(parsed.ContentChanges) == 0 {
-		return fmt.Errorf("didChange content changes are required")
+		return errors.New("didChange content changes are required")
 	}
 
 	for _, change := range parsed.ContentChanges {
 		if len(change.Range) > 0 && string(change.Range) != "null" {
-			return fmt.Errorf("didChange range is not supported with full synchronization")
+			return errors.New("didChange range is not supported with full synchronization")
 		}
 	}
 
@@ -143,7 +145,7 @@ func (s *documentStore) didSave(params json.RawMessage) error {
 		return fmt.Errorf("decode didSave parameters: %w", err)
 	}
 	if parsed.TextDocument.URI == "" {
-		return fmt.Errorf("didSave document URI is required")
+		return errors.New("didSave document URI is required")
 	}
 	current, found := s.documents[parsed.TextDocument.URI]
 	if !found {
@@ -165,7 +167,7 @@ func (s *documentStore) didClose(params json.RawMessage) error {
 		return fmt.Errorf("decode didClose parameters: %w", err)
 	}
 	if parsed.TextDocument.URI == "" {
-		return fmt.Errorf("didClose document URI is required")
+		return errors.New("didClose document URI is required")
 	}
 	if _, found := s.documents[parsed.TextDocument.URI]; !found {
 		return fmt.Errorf("didClose document %q is not open", parsed.TextDocument.URI)
