@@ -170,7 +170,7 @@ func TestDiagnosticUTF16Range(t *testing.T) {
 	}}
 	diags := diagnosticsForError(err, text)
 	require.Len(t, diags, 1)
-	assert.Equal(t, diagnosticRange{
+	assert.Equal(t, documentRange{
 		Start: position{Line: 1, Character: 24},
 		End:   position{Line: 1, Character: 27},
 	}, diags[0].Range)

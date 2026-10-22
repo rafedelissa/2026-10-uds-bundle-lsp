@@ -34,6 +34,16 @@ type responseError struct {
 	Message string `json:"message"`
 }
 
+type position struct {
+	Line      int `json:"line"`
+	Character int `json:"character"`
+}
+
+type documentRange struct {
+	Start position `json:"start"`
+	End   position `json:"end"`
+}
+
 type initializeResult struct {
 	Capabilities serverCapabilities `json:"capabilities"`
 	ServerInfo   serverInfo         `json:"serverInfo"`
@@ -45,6 +55,15 @@ type initializeParams struct {
 	ClientInfo   *clientInfo `json:"clientInfo,omitempty"`
 	Capabilities struct {
 		TextDocument struct {
+			Completion struct {
+				CompletionItem struct {
+					SnippetSupport      bool     `json:"snippetSupport"`
+					DocumentationFormat []string `json:"documentationFormat"`
+				} `json:"completionItem"`
+			} `json:"completion"`
+			Hover struct {
+				ContentFormat []string `json:"contentFormat"`
+			} `json:"hover"`
 			PublishDiagnostics struct {
 				VersionSupport bool `json:"versionSupport"`
 			} `json:"publishDiagnostics"`
@@ -58,8 +77,15 @@ type clientInfo struct {
 }
 
 type serverCapabilities struct {
-	PositionEncoding string                  `json:"positionEncoding"`
-	TextDocumentSync textDocumentSyncOptions `json:"textDocumentSync"`
+	CompletionProvider completionOptions       `json:"completionProvider"`
+	HoverProvider      bool                    `json:"hoverProvider"`
+	PositionEncoding   string                  `json:"positionEncoding"`
+	TextDocumentSync   textDocumentSyncOptions `json:"textDocumentSync"`
+}
+
+type completionOptions struct {
+	ResolveProvider   bool     `json:"resolveProvider"`
+	TriggerCharacters []string `json:"triggerCharacters"`
 }
 
 type textDocumentSyncOptions struct {

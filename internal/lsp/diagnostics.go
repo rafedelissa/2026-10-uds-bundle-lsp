@@ -18,21 +18,11 @@ import (
 	"github.com/hashicorp/hcl/v2"
 )
 
-type position struct {
-	Line      int `json:"line"`
-	Character int `json:"character"`
-}
-
-type diagnosticRange struct {
-	Start position `json:"start"`
-	End   position `json:"end"`
-}
-
 type diagnostic struct {
-	Range    diagnosticRange `json:"range"`
-	Severity int             `json:"severity"`
-	Source   string          `json:"source"`
-	Message  string          `json:"message"`
+	Range    documentRange `json:"range"`
+	Severity int           `json:"severity"`
+	Source   string        `json:"source"`
+	Message  string        `json:"message"`
 }
 
 type publishDiagnosticsParams struct {
@@ -142,8 +132,8 @@ func diagnosticsForError(err error, text string) []diagnostic {
 	return []diagnostic{item}
 }
 
-func rangeFromHCL(text string, r hcl.Range) diagnosticRange {
-	return diagnosticRange{
+func rangeFromHCL(text string, r hcl.Range) documentRange {
+	return documentRange{
 		Start: positionAtByte(text, r.Start.Byte),
 		End:   positionAtByte(text, r.End.Byte),
 	}
