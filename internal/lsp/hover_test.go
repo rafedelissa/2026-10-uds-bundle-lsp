@@ -46,7 +46,7 @@ func TestBundleHover(t *testing.T) {
 			store.hoverContentFormat = "markdown"
 			uri := "file:///workspace/bundle.uds.hcl"
 			store.documents[uri] = document{URI: uri, Text: text}
-			result := store.hover(hoverParams{TextDocument: textDocumentIdentifier{URI: uri}, Position: &pos})
+			result := store.hover(documentPositionParams{TextDocument: textDocumentIdentifier{URI: uri}, Position: &pos})
 			if len(tt.want) == 0 {
 				assert.Nil(t, result)
 				return
@@ -74,7 +74,7 @@ func TestServeHoverLifecycle(t *testing.T) {
 		t.Run(strings.Join(formats, ","), func(t *testing.T) {
 			uri := "file:///workspace/bundle.uds.hcl"
 			text := "metadata { name = \"app\" }\n"
-			params := hoverParams{
+			params := documentPositionParams{
 				TextDocument: textDocumentIdentifier{URI: uri},
 				Position:     &position{Line: 0, Character: 12},
 			}

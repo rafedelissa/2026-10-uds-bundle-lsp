@@ -24,6 +24,8 @@ type documentStore struct {
 	documents                map[string]document
 	diagnosticVersionSupport bool
 	hoverContentFormat       string
+	completionSnippetSupport bool
+	completionContentFormat  string
 }
 
 // textDocumentItem describes a document when it is opened by the client.

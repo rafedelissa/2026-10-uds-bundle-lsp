@@ -55,6 +55,12 @@ type initializeParams struct {
 	ClientInfo   *clientInfo `json:"clientInfo,omitempty"`
 	Capabilities struct {
 		TextDocument struct {
+			Completion struct {
+				CompletionItem struct {
+					SnippetSupport      bool     `json:"snippetSupport"`
+					DocumentationFormat []string `json:"documentationFormat"`
+				} `json:"completionItem"`
+			} `json:"completion"`
 			Hover struct {
 				ContentFormat []string `json:"contentFormat"`
 			} `json:"hover"`
@@ -71,9 +77,15 @@ type clientInfo struct {
 }
 
 type serverCapabilities struct {
-	HoverProvider    bool                    `json:"hoverProvider"`
-	PositionEncoding string                  `json:"positionEncoding"`
-	TextDocumentSync textDocumentSyncOptions `json:"textDocumentSync"`
+	CompletionProvider completionOptions       `json:"completionProvider"`
+	HoverProvider      bool                    `json:"hoverProvider"`
+	PositionEncoding   string                  `json:"positionEncoding"`
+	TextDocumentSync   textDocumentSyncOptions `json:"textDocumentSync"`
+}
+
+type completionOptions struct {
+	ResolveProvider   bool     `json:"resolveProvider"`
+	TriggerCharacters []string `json:"triggerCharacters"`
 }
 
 type textDocumentSyncOptions struct {

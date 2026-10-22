@@ -133,10 +133,13 @@ func handleMessage(ctx context.Context, writer *bufio.Writer, msg message, state
 		streams.Info("LSP initialize received", "client_name", name, "client_version", version)
 		documents.diagnosticVersionSupport = params.Capabilities.TextDocument.PublishDiagnostics.VersionSupport
 		documents.hoverContentFormat = hoverContentFormat(params.Capabilities.TextDocument.Hover.ContentFormat)
+		documents.completionSnippetSupport = params.Capabilities.TextDocument.Completion.CompletionItem.SnippetSupport
+		documents.completionContentFormat = hoverContentFormat(params.Capabilities.TextDocument.Completion.CompletionItem.DocumentationFormat)
 		result, err := json.Marshal(initializeResult{
 			Capabilities: serverCapabilities{
-				HoverProvider:    true,
-				PositionEncoding: "utf-16",
+				CompletionProvider: completionOptions{TriggerCharacters: []string{"{"}},
+				HoverProvider:      true,
+				PositionEncoding:   "utf-16",
 				TextDocumentSync: textDocumentSyncOptions{
 					OpenClose: true,
 					Change:    1, // TextDocumentSyncKind.Full
@@ -170,20 +173,26 @@ func handleMessage(ctx context.Context, writer *bufio.Writer, msg message, state
 		return handleDocumentNotification(ctx, writer, msg, state, documents, documents.didSave)
 	case "textDocument/didClose":
 		return handleDocumentNotification(ctx, writer, msg, state, documents, documents.didClose)
-	case "textDocument/hover":
+	case "textDocument/hover", "textDocument/completion":
 		if msg.ID == nil {
 			return false, state, nil
 		}
 		if state != stateInitialized {
 			return false, state, writeError(writer, msg.ID, codeServerNotInitialized, "server not initialized")
 		}
-		var params hoverParams
+		var params documentPositionParams
 		if err := json.Unmarshal(msg.Params, &params); err != nil || params.TextDocument.URI == "" || params.Position == nil || params.Position.Line < 0 || params.Position.Character < 0 {
-			return false, state, writeError(writer, msg.ID, codeInvalidParams, "invalid hover parameters")
+			return false, state, writeError(writer, msg.ID, codeInvalidParams, "invalid document position parameters")
 		}
-		result, err := json.Marshal(documents.hover(params))
+		var value any
+		if msg.Method == "textDocument/completion" {
+			value = documents.complete(params)
+		} else {
+			value = documents.hover(params)
+		}
+		result, err := json.Marshal(value)
 		if err != nil {
-			return false, state, fmt.Errorf("encode hover result: %w", err)
+			return false, state, fmt.Errorf("encode %s result: %w", msg.Method, err)
 		}
 		return false, state, writeResult(writer, msg.ID, result)
 	default:

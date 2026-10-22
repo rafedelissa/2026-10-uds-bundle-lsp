@@ -12,7 +12,7 @@ import (
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 )
 
-type hoverParams struct {
+type documentPositionParams struct {
 	TextDocument textDocumentIdentifier `json:"textDocument"`
 	Position     *position              `json:"position"`
 }
@@ -27,7 +27,7 @@ type hoverResult struct {
 	Range    documentRange `json:"range"`
 }
 
-func (s *documentStore) hover(params hoverParams) *hoverResult {
+func (s *documentStore) hover(params documentPositionParams) *hoverResult {
 	doc, found := s.document(params.TextDocument.URI)
 	if !found {
 		return nil
