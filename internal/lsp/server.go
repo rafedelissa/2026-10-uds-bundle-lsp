@@ -210,7 +210,7 @@ func handleMessage(ctx context.Context, writer *bufio.Writer, msg message, state
 		var value any
 		switch msg.Method {
 		case "textDocument/completion":
-			value = documents.complete(params)
+			value = documents.complete(ctx, params)
 		case "textDocument/definition":
 			value = documents.definition(params)
 		case "textDocument/documentHighlight":

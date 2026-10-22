@@ -53,7 +53,7 @@ func TestBundleCompletionContext(t *testing.T) {
 			store.completionSnippetSupport = true
 			uri := "file:///workspace/bundle.uds.hcl"
 			store.documents[uri] = document{URI: uri, Text: text}
-			result := store.complete(documentPositionParams{TextDocument: textDocumentIdentifier{URI: uri}, Position: &pos})
+			result := store.complete(t.Context(), documentPositionParams{TextDocument: textDocumentIdentifier{URI: uri}, Position: &pos})
 			var labels []string
 			for _, item := range result.Items {
 				labels = append(labels, item.Label)
@@ -119,7 +119,7 @@ func TestFileSpecificCompletion(t *testing.T) {
 			store := newDocumentStore()
 			store.documents[tt.uri] = document{URI: tt.uri, Text: text}
 
-			result := store.complete(documentPositionParams{
+			result := store.complete(t.Context(), documentPositionParams{
 				TextDocument: textDocumentIdentifier{URI: tt.uri},
 				Position:     &pos,
 			})
@@ -212,7 +212,7 @@ metadata { name = "local.|" }
 			store := newDocumentStore()
 			store.documents[uri] = document{URI: uri, Text: text}
 
-			result := store.complete(documentPositionParams{
+			result := store.complete(t.Context(), documentPositionParams{
 				TextDocument: textDocumentIdentifier{URI: uri},
 				Position:     &pos,
 			})
@@ -268,7 +268,7 @@ func TestCompletionEdits(t *testing.T) {
 			store.completionSnippetSupport = true
 			uri := "file:///workspace/bundle.uds.hcl"
 			store.documents[uri] = document{URI: uri, Text: text}
-			result := store.complete(documentPositionParams{TextDocument: textDocumentIdentifier{URI: uri}, Position: &pos})
+			result := store.complete(t.Context(), documentPositionParams{TextDocument: textDocumentIdentifier{URI: uri}, Position: &pos})
 			item := completionByLabel(t, result, tt.label)
 			assert.Equal(t, tt.insert, item.TextEdit.NewText)
 			assert.Equal(t, tt.format, item.InsertTextFormat)

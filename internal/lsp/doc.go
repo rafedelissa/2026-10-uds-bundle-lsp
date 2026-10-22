@@ -3,5 +3,5 @@
 
 // Package lsp implements the Language Server Protocol transport, lifecycle,
 // document synchronization, diagnostics, hover, completion, definition lookup,
-// document highlights, and rename for Next bundles.
+// document highlights, rename, and values-file completion for Next bundles.
 package lsp
