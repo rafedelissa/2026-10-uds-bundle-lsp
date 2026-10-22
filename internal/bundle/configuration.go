@@ -72,13 +72,22 @@ type ConfigOptions struct {
 // UDSBundleConfig, and hcl:",remain" to capture the free-form variables attribute
 // which is then manually extracted and converted from cty.Value to Variables.
 // The context parameter is currently unused as none of the HCL parsing methods supports cancellation.
-func (p *HCLParser) ParseBundleConfig(_ context.Context, filePath string) (*UDSBundleConfig, error) {
+func (p *HCLParser) ParseBundleConfig(ctx context.Context, filePath string) (*UDSBundleConfig, error) {
 	if filePath == "" {
 		return nil, EmptyParameterError{Name: "filePath"}
 	}
 	src, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("%w %q: %w", ErrReadConfigFile, filePath, err)
+	}
+	return p.ParseBundleConfigSource(ctx, src, filePath)
+}
+
+// ParseBundleConfigSource parses an editor buffer associated with a trusted local
+// config path. file() calls resolve relative to filePath, as in ParseBundleConfig.
+func (p *HCLParser) ParseBundleConfigSource(_ context.Context, src []byte, filePath string) (*UDSBundleConfig, error) {
+	if filePath == "" {
+		return nil, EmptyParameterError{Name: "filePath"}
 	}
 
 	hclFile, hclDiagnostics := hclsyntax.ParseConfig(src, filePath, hcl.Pos{Line: 1, Column: 1})
@@ -271,6 +280,15 @@ func ParseDefaults(_ context.Context, path string) (Variables, error) {
 	src, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("%w %q: %w", ErrReadDefaultsFile, path, err)
+	}
+	return parseDefaultsContent(src, path)
+}
+
+// ParseDefaultsSource parses an editor buffer associated with a trusted local
+// defaults path. file() calls resolve relative to path, as in ParseDefaults.
+func ParseDefaultsSource(_ context.Context, src []byte, path string) (Variables, error) {
+	if path == "" {
+		return nil, EmptyParameterError{Name: "path"}
 	}
 	return parseDefaultsContent(src, path)
 }

@@ -1,0 +1,4 @@
+ports:
+{{- range .vars.ports }}
+  - port: {{ .port }}
+{{- end }}

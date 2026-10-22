@@ -1,0 +1,5 @@
+# This file should have no diagnostic until disabled becomes true.
+{{- if .vars.disabled }}
+value: {{ .vars.only_needed_when_disabled }}
+{{- end }}
+branchSkipped: true

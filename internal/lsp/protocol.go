@@ -52,8 +52,16 @@ type initializeResult struct {
 // initializeParams contains client information and capabilities used by this server.
 // Unknown capabilities are ignored for forward compatibility.
 type initializeParams struct {
-	ClientInfo   *clientInfo `json:"clientInfo,omitempty"`
-	Capabilities struct {
+	ClientInfo       *clientInfo       `json:"clientInfo,omitempty"`
+	RootURI          string            `json:"rootUri"`
+	RootPath         string            `json:"rootPath"`
+	WorkspaceFolders []workspaceFolder `json:"workspaceFolders"`
+	Capabilities     struct {
+		Workspace struct {
+			DidChangeWatchedFiles struct {
+				DynamicRegistration bool `json:"dynamicRegistration"`
+			} `json:"didChangeWatchedFiles"`
+		} `json:"workspace"`
 		TextDocument struct {
 			Completion struct {
 				CompletionItem struct {
@@ -84,6 +92,28 @@ type serverCapabilities struct {
 	PositionEncoding          string                  `json:"positionEncoding"`
 	RenameProvider            bool                    `json:"renameProvider"`
 	TextDocumentSync          textDocumentSyncOptions `json:"textDocumentSync"`
+	Workspace                 workspaceCapabilities   `json:"workspace"`
+}
+
+type workspaceFolder struct {
+	URI  string `json:"uri"`
+	Name string `json:"name"`
+}
+
+type workspaceCapabilities struct {
+	WorkspaceFolders workspaceFolderCapabilities `json:"workspaceFolders"`
+}
+
+type workspaceFolderCapabilities struct {
+	Supported           bool `json:"supported"`
+	ChangeNotifications bool `json:"changeNotifications"`
+}
+
+type changeWorkspaceFoldersParams struct {
+	Event struct {
+		Added   []workspaceFolder `json:"added"`
+		Removed []workspaceFolder `json:"removed"`
+	} `json:"event"`
 }
 
 type completionOptions struct {

@@ -44,7 +44,8 @@ func TestServeLifecycle(t *testing.T) {
 			"hoverProvider": true,
 			"positionEncoding": "utf-16",
 			"renameProvider": true,
-			"textDocumentSync": {"openClose": true, "change": 1, "save": {"includeText": false}}
+			"textDocumentSync": {"openClose": true, "change": 1, "save": {"includeText": false}},
+			"workspace": {"workspaceFolders": {"supported": true, "changeNotifications": true}}
 		},
 		"serverInfo": {"name": "uds-lsp"}
 	}`, string(responses[0].Result))

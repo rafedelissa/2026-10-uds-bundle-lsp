@@ -1,0 +1,1 @@
+options { concurrency = 2 }

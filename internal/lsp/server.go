@@ -71,7 +71,24 @@ func Serve(ctx context.Context, input InterruptibleReader, output io.Writer, str
 		}
 
 		var msg message
-		if err := json.Unmarshal(payload, &msg); err != nil || msg.JSONRPC != jsonRPCVersion || msg.Method == "" {
+		if err := json.Unmarshal(payload, &msg); err != nil || msg.JSONRPC != jsonRPCVersion {
+			if err := writeError(writer, null, codeInvalidRequest, "invalid request"); err != nil {
+				return err
+			}
+			continue
+		}
+		if msg.Method == "" && documents.watchRegistrationPending && string(msg.ID) == `"uds-lsp-watch-files"` {
+			var reply response
+			if err := json.Unmarshal(payload, &reply); err != nil {
+				return fmt.Errorf("decode file watcher registration response: %w", err)
+			}
+			documents.watchRegistrationPending = false
+			if reply.Error != nil {
+				streams.Warn("LSP client rejected file watcher registration", "message", reply.Error.Message)
+			}
+			continue
+		}
+		if msg.Method == "" {
 			if err := writeError(writer, null, codeInvalidRequest, "invalid request"); err != nil {
 				return err
 			}
@@ -131,7 +148,9 @@ func handleMessage(ctx context.Context, writer *bufio.Writer, msg message, state
 			}
 		}
 		streams.Info("LSP initialize received", "client_name", name, "client_version", version)
+		documents.initializeWorkspace(params)
 		documents.diagnosticVersionSupport = params.Capabilities.TextDocument.PublishDiagnostics.VersionSupport
+		documents.watchFilesSupport = params.Capabilities.Workspace.DidChangeWatchedFiles.DynamicRegistration
 		documents.hoverContentFormat = hoverContentFormat(params.Capabilities.TextDocument.Hover.ContentFormat)
 		documents.completionSnippetSupport = params.Capabilities.TextDocument.Completion.CompletionItem.SnippetSupport
 		documents.completionContentFormat = hoverContentFormat(params.Capabilities.TextDocument.Completion.CompletionItem.DocumentationFormat)
@@ -143,6 +162,9 @@ func handleMessage(ctx context.Context, writer *bufio.Writer, msg message, state
 				HoverProvider:             true,
 				PositionEncoding:          "utf-16",
 				RenameProvider:            true,
+				Workspace: workspaceCapabilities{WorkspaceFolders: workspaceFolderCapabilities{
+					Supported: true, ChangeNotifications: true,
+				}},
 				TextDocumentSync: textDocumentSyncOptions{
 					OpenClose: true,
 					Change:    1, // TextDocumentSyncKind.Full
@@ -158,6 +180,13 @@ func handleMessage(ctx context.Context, writer *bufio.Writer, msg message, state
 	case "initialized":
 		if msg.ID != nil {
 			return false, state, writeError(writer, msg.ID, codeInvalidRequest, "initialized must be a notification")
+		}
+		if state == stateInitialized {
+			if err := documents.registerFileWatcher(writer); err != nil {
+				return false, state, err
+			}
+			documents.reindexWorkspace(ctx, streams)
+			return false, state, documents.refreshDiagnostics(ctx, writer)
 		}
 		return false, state, nil
 	case "shutdown":
@@ -176,6 +205,46 @@ func handleMessage(ctx context.Context, writer *bufio.Writer, msg message, state
 		return handleDocumentNotification(ctx, writer, msg, state, documents, documents.didSave)
 	case "textDocument/didClose":
 		return handleDocumentNotification(ctx, writer, msg, state, documents, documents.didClose)
+	case "workspace/didChangeWatchedFiles":
+		if msg.ID != nil {
+			return false, state, writeError(writer, msg.ID, codeInvalidRequest, "file changes must be a notification")
+		}
+		if state != stateInitialized {
+			return false, state, nil
+		}
+		var params struct {
+			Changes []struct {
+				URI  string `json:"uri"`
+				Type int    `json:"type"`
+			} `json:"changes"`
+		}
+		if err := json.Unmarshal(msg.Params, &params); err != nil {
+			return false, state, fmt.Errorf("decode watched file changes: %w", err)
+		}
+		if len(params.Changes) == 0 {
+			return false, state, nil
+		}
+		for _, change := range params.Changes {
+			if change.Type == 1 || change.Type == 3 {
+				documents.reindexWorkspace(ctx, streams)
+				break
+			}
+		}
+		return false, state, documents.refreshDiagnostics(ctx, writer)
+	case "workspace/didChangeWorkspaceFolders":
+		if msg.ID != nil {
+			return false, state, writeError(writer, msg.ID, codeInvalidRequest, "workspace folder changes must be a notification")
+		}
+		if state != stateInitialized {
+			return false, state, nil
+		}
+		var params changeWorkspaceFoldersParams
+		if err := json.Unmarshal(msg.Params, &params); err != nil {
+			return false, state, fmt.Errorf("decode workspace folder changes: %w", err)
+		}
+		documents.changeWorkspaceFolders(params)
+		documents.reindexWorkspace(ctx, streams)
+		return false, state, documents.refreshDiagnostics(ctx, writer)
 	case "textDocument/rename":
 		if msg.ID == nil {
 			return false, state, nil
@@ -253,7 +322,14 @@ func handleDocumentNotification(
 	if err := handle(msg.Params); err != nil {
 		return false, state, fmt.Errorf("handle %s notification: %w", msg.Method, err)
 	}
-	return false, state, documents.publishDiagnostics(ctx, writer, msg.Params)
+	if msg.Method == "textDocument/didSave" {
+		var params didSaveTextDocumentParams
+		if err := json.Unmarshal(msg.Params, &params); err != nil {
+			return false, state, fmt.Errorf("decode saved document: %w", err)
+		}
+		documents.indexSavedDocument(params.TextDocument.URI)
+	}
+	return false, state, documents.refreshDiagnostics(ctx, writer)
 }
 
 func writeResult(writer *bufio.Writer, id, result json.RawMessage) error {

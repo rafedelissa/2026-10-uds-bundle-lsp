@@ -1,0 +1,2 @@
+# Open this file: the UDS LSP should publish no diagnostic for it.
+value: {{ .vars.missing }}

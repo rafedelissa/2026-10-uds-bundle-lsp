@@ -1,0 +1,3 @@
+names:
+{{- range .vars.names }}
+  - {{ . }}

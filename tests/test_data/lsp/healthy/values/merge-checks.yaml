@@ -1,0 +1,20 @@
+# A failed assumption deliberately accesses a missing key to produce a diagnostic.
+# With the supplied defaults/config, none of these branches execute.
+{{- if ne .vars.replicas 3.0 }}
+replicas: {{ .vars.expected_config_replicas_to_win }}
+{{- end }}
+{{- if ne .vars.database.host "database.local" }}
+host: {{ .vars.expected_default_host_to_survive }}
+{{- end }}
+{{- if ne .vars.database.port 6432.0 }}
+port: {{ .vars.expected_config_port_to_win }}
+{{- end }}
+{{- if ne (len .vars.ports) 1 }}
+ports: {{ .vars.expected_collection_replacement }}
+{{- end }}
+{{- range .vars.ports }}
+{{- if ne .name "configured-http" }}
+name: {{ $.vars.expected_default_list_entries_to_disappear }}
+{{- end }}
+{{- end }}
+checksPassed: true

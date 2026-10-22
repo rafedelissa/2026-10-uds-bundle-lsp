@@ -127,6 +127,14 @@ exercise UDS only through `pkg/bundle`, `pkg/bundle/spec`, and `pkg/iostreams`.
 CLI tests execute Cobra directly. A minimal primary-binary check covers process
 startup and routing. Core E2E belongs to the CLI layer.
 
+For manual language-server checks, use the
+[LSP validation playground](tests/test_data/lsp/README.md). It includes healthy
+and intentionally broken bundle, defaults, config, and values-file fixtures,
+with expected diagnostics and editor refresh checks. It requires no registry
+or cluster access. Supply the playground as an LSP workspace root to verify
+diagnostics for unopened bundles. The intentionally invalid cases also produce
+diagnostics when the entire repository is indexed.
+
 | Layer | Starting condition | Task |
 | --- | --- | --- |
 | Unit | No cluster | `test:next-unit` |

@@ -26,6 +26,12 @@ type documentStore struct {
 	hoverContentFormat       string
 	completionSnippetSupport bool
 	completionContentFormat  string
+	publishedDiagnostics     map[string]struct{}
+	watchFilesSupport        bool
+	watchRegistrationPending bool
+	watchRegistrationSent    bool
+	workspaceFolders         map[string]workspaceFolder
+	workspaceFiles           map[string]struct{}
 }
 
 // textDocumentItem describes a document when it is opened by the client.

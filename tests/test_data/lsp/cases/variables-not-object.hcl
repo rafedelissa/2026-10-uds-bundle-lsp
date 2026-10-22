@@ -1,0 +1,1 @@
+variables = ["not", "an", "object"]

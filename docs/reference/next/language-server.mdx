@@ -1,0 +1,62 @@
+---
+title: Language server diagnostics
+description: Reference local bundle, defaults, config, and values-template diagnostics provided by the UDS language server.
+sidebar:
+  order: 4.600
+---
+
+The `uds-lsp` executable provides editor diagnostics for Next bundle source files over standard input and output. Configure your editor's LSP client to launch `uds-lsp` and synchronize the bundle HCL files and referenced YAML values files.
+
+## Local validation
+
+| Input | Diagnostics |
+| --- | --- |
+| `bundle.uds.hcl` | HCL parsing and evaluation, bundle constraints, package dependencies, and missing or unreadable referenced values files. |
+| `defaults.uds.hcl` | HCL parsing and evaluation, the variables-only file structure, and supported variable types. |
+| `config.uds.hcl` | HCL parsing and evaluation, decoded option types, and supported variable types. |
+| Referenced values files | Go template syntax and execution failures using merged adjacent defaults and config variables. |
+
+Relative `values_files` paths resolve from the bundle directory. Absolute paths and paths such as `../shared/values.yaml` are supported. A missing defaults or config file is allowed.
+
+The server indexes `bundle.uds.hcl`, `defaults.uds.hcl`, and `config.uds.hcl` throughout the editor's workspace folders. Diagnostics are published after initialization, including errors in unopened bundles and standalone defaults/config files. A shared values file is checked separately for every indexed bundle that references it.
+
+Open editor buffers take precedence over files on disk, including new unsaved values files. Closing a buffer restores its saved content; indexed files continue to receive diagnostics with no tabs open.
+
+## Workspace discovery
+
+The server uses the local file URIs in `workspaceFolders` supplied during initialization. For clients that omit that list, it falls back to `rootUri`, then the deprecated local `rootPath`. An explicitly empty workspace-folder list disables automatic discovery. The server advertises workspace-folder support and handles folders added or removed during a session.
+
+Discovery skips child directories named `.git`, `vendor`, `node_modules`, `build`, and `dist`, and does not follow directory symlinks. Overlapping workspace folders are deduplicated. Author-selected values paths may still refer outside the workspace or into an excluded directory; those references are validated normally.
+
+Files explicitly opened in the editor remain eligible for validation. Without a workspace root, the server retains document-based discovery, including searching a values file's ancestors for referencing bundles. The server does not scan the process working directory implicitly.
+
+Opening this repository as a workspace discovers the intentionally invalid LSP playground fixtures too. Their diagnostics are expected even when those files are closed. Open a narrower workspace folder to focus on one scenario.
+
+## Variable context
+
+For editor validation, the server merges `defaults.uds.hcl` and `config.uds.hcl` adjacent to each bundle. Config variables override defaults. Nested objects merge recursively; scalars and collections replace the earlier value wholesale. An adjacent config's `options.architecture` also supplies `sys.arch` during bundle evaluation.
+
+This is an editor convention. CLI commands load config only when selected with `--config`. Diagnostics identify the adjacent defaults/config context; another config or CLI variable override can produce a different result. Selecting another config through LSP settings is not supported.
+
+The server parses Go templates and executes them with the same `missingkey=error` option used during deployment. Execution follows Go template scoping and control flow, including `range`, `with`, `if`, and `index`. When neither defaults nor config defines a variables object, execution is skipped, matching deployment behavior. Template syntax is still checked. An empty `variables = {}` object enables execution.
+
+If defaults or config cannot be parsed or evaluated, the server reports that failure and skips dependent template execution to avoid cascading diagnostics. Template syntax checks continue. Template diagnostics include related locations for the package's `values_files` reference and the available defaults/config variables.
+
+## Refresh behavior
+
+Opening, changing, saving, or closing a synchronized document refreshes diagnostics for indexed and open bundles. Removing the final reference clears a values file's previous UDS diagnostics. Closing a related file restores its saved content when an indexed or open bundle still references it.
+
+For clients that advertise dynamic file-watcher registration, the server requests workspace file create, change, and delete notifications. It also accepts `workspace/didChangeWatchedFiles` notifications from clients that configure watchers themselves. Create/delete events rebuild the file index, covering bundle creation, directory moves, and deletion; content changes refresh validation from disk while preserving open buffers. Saving a new HCL file adds it to the index even without watcher support.
+
+Disk changes outside the client's watched scope refresh on the next document synchronization event for already indexed inputs. Discovering other new bundle files requires a watcher event, a save notification for that file, a workspace-folder change, or restarting the server.
+
+## Validation limits
+
+This pass checks values-file paths and Go templates. It does not validate rendered YAML, package values schemas, local Zarf package contents, registry availability, or cluster state. Template execution checks the branches selected by the current variables.
+
+HCL `file()` calls use saved files on disk, resolved relative to the containing HCL file. Unsaved edits to those referenced text files are not used by HCL evaluation.
+
+## Related documentation
+
+- [Bundle definition](/cli/reference/next/bundle-uds-hcl/) - package sources, dependencies, and values-file references.
+- [Deploy-time config](/cli/reference/next/config-uds-hcl/) - CLI config selection and variable precedence.

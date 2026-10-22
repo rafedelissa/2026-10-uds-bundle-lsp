@@ -1,0 +1,17 @@
+replicas: {{ .vars.replicas }}
+enabled: {{ .vars.enabled }}
+database:
+{{- with .vars.database }}
+  host: {{ .host | printf "%q" }}
+  port: {{ .port }}
+{{- end }}
+ports:
+{{- range $index, $port := .vars.ports }}
+  - name: {{ $port.name | printf "%q" }}
+    port: {{ $port.port }}
+{{- end }}
+appName: {{ index .vars.labels "app.kubernetes.io/name" | printf "%q" }}
+# This branch is not executed, so its missing variable is allowed.
+{{- if not .vars.enabled }}
+inactive: {{ .vars.only_needed_when_disabled }}
+{{- end }}

@@ -1,15 +1,9 @@
 package lsp
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"net/url"
-	"path"
-	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/defenseunicorns/uds-cli/internal/bundle"
@@ -19,10 +13,16 @@ import (
 )
 
 type diagnostic struct {
-	Range    documentRange `json:"range"`
-	Severity int           `json:"severity"`
-	Source   string        `json:"source"`
-	Message  string        `json:"message"`
+	Range              documentRange                  `json:"range"`
+	Severity           int                            `json:"severity"`
+	Source             string                         `json:"source"`
+	Message            string                         `json:"message"`
+	RelatedInformation []diagnosticRelatedInformation `json:"relatedInformation,omitempty"`
+}
+
+type diagnosticRelatedInformation struct {
+	Location location `json:"location"`
+	Message  string   `json:"message"`
 }
 
 type publishDiagnosticsParams struct {
@@ -31,53 +31,21 @@ type publishDiagnosticsParams struct {
 	Diagnostics []diagnostic `json:"diagnostics"`
 }
 
-func (s *documentStore) publishDiagnostics(ctx context.Context, writer *bufio.Writer, params json.RawMessage) error {
-	// All synchronization notifications identify their document in this field.
-	var parsed struct {
-		TextDocument textDocumentIdentifier `json:"textDocument"`
-	}
-	if err := json.Unmarshal(params, &parsed); err != nil {
-		return err
-	}
-	uri, err := url.Parse(parsed.TextDocument.URI)
-	if err != nil {
-		return fmt.Errorf("parse document URI: %w", err)
-	}
-	if path.Base(uri.Path) != bundle.BundleFileName {
-		return nil
-	}
-	result := publishDiagnosticsParams{
-		URI:         parsed.TextDocument.URI,
-		Diagnostics: make([]diagnostic, 0),
-	}
-	if doc, found := s.document(result.URI); found {
-		result.Diagnostics = bundleDiagnostics(ctx, doc, uri)
-		if s.diagnosticVersionSupport {
-			result.Version = &doc.Version
-		}
-	}
-	// A closed document publishes an empty array to clear its previous results.
-	return writeMessage(writer, struct {
-		JSONRPC string                   `json:"jsonrpc"`
-		Method  string                   `json:"method"`
-		Params  publishDiagnosticsParams `json:"params"`
-	}{JSONRPC: jsonRPCVersion, Method: "textDocument/publishDiagnostics", Params: result})
+func bundleDiagnostics(ctx context.Context, doc document, uri *url.URL) []diagnostic {
+	_, diagnostics := parseBundleDocument(ctx, doc, uri, "")
+	return diagnostics
 }
 
-func bundleDiagnostics(ctx context.Context, doc document, uri *url.URL) []diagnostic {
+func parseBundleDocument(ctx context.Context, doc document, uri *url.URL, arch string) (*spec.UDSBundle, []diagnostic) {
 	streams := iostreams.IOStreams{}
-	parser := bundle.NewHCLParser("", streams)
+	parser := bundle.NewHCLParser(arch, streams)
 	// Only local file URIs supply a directory for file(). Never read the bundle
 	// itself from disk: the synchronized buffer is the source of truth.
-	filename := filepath.FromSlash(uri.Path)
-	if runtime.GOOS == "windows" && strings.HasPrefix(filename, `\`) {
-		filename = strings.TrimPrefix(filename, `\`)
-	}
 	var (
 		b   *spec.UDSBundle
 		err error
 	)
-	if uri.Scheme == "file" && (uri.Host == "" || uri.Host == "localhost") && filepath.IsAbs(filename) {
+	if filename, ok := fileURIPath(uri.String()); ok {
 		b, err = parser.ParseBundleSource(ctx, []byte(doc.Text), filename)
 	} else {
 		b, err = parser.ParseBundleBytes(ctx, []byte(doc.Text))
@@ -89,12 +57,22 @@ func bundleDiagnostics(ctx context.Context, doc document, uri *url.URL) []diagno
 		}
 	}
 	if err == nil {
-		return make([]diagnostic, 0)
+		return b, make([]diagnostic, 0)
 	}
-	return diagnosticsForError(err, doc.Text)
+	return b, diagnosticsForError(err, doc.Text)
 }
 
 func diagnosticsForError(err error, text string) []diagnostic {
+	// Only expand an errors.Join aggregate. A multi-%w fmt wrapper adds
+	// operation context and must stay intact rather than publishing its
+	// sentinel and underlying failure as separate diagnostics.
+	if joined, ok := err.(interface{ Unwrap() []error }); ok && err.Error() == errors.Join(joined.Unwrap()...).Error() {
+		var result []diagnostic
+		for _, child := range joined.Unwrap() {
+			result = append(result, diagnosticsForError(child, text)...)
+		}
+		return result
+	}
 	var hclDiags hcl.Diagnostics
 	if errors.As(err, &hclDiags) {
 		result := make([]diagnostic, 0, len(hclDiags))
@@ -110,13 +88,6 @@ func diagnosticsForError(err error, text string) []diagnostic {
 				item.Range = rangeFromHCL(text, *d.Subject)
 			}
 			result = append(result, item)
-		}
-		return result
-	}
-	if joined, ok := err.(interface{ Unwrap() []error }); ok {
-		var result []diagnostic
-		for _, child := range joined.Unwrap() {
-			result = append(result, diagnosticsForError(child, text)...)
 		}
 		return result
 	}

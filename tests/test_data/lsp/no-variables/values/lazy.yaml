@@ -1,0 +1,2 @@
+# No variables object means deployment and the LSP skip execution.
+value: {{ .vars.missing }}

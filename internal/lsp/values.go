@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 
 	"github.com/defenseunicorns/uds-cli/internal/bundle"
 	"github.com/defenseunicorns/uds-cli/pkg/bundle/spec"
@@ -136,5 +138,9 @@ func fileURIPath(uri string) (string, bool) {
 	if parsed.Host != "" && parsed.Host != "localhost" {
 		return "", false
 	}
-	return filepath.FromSlash(parsed.Path), true
+	filename := filepath.FromSlash(parsed.Path)
+	if runtime.GOOS == "windows" {
+		filename = strings.TrimPrefix(filename, `\`)
+	}
+	return filepath.Clean(filename), filepath.IsAbs(filename)
 }

@@ -1,0 +1,2 @@
+# No execution diagnostic while config is invalid.
+value: {{ .vars.missing }}

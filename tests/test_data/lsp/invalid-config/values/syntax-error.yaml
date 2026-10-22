@@ -1,0 +1,2 @@
+# Syntax is checked even while config is invalid.
+value: {{ unknownFunction .vars }}

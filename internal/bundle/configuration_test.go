@@ -14,6 +14,33 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestVariableSourceBuffers(t *testing.T) {
+	for _, kind := range []string{"defaults", "config"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, kind+".uds.hcl")
+			require.NoError(t, os.WriteFile(path, []byte("invalid {"), 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "host.txt"), []byte("database.local"), 0o600))
+			src := []byte(`variables = { db = { host = file("host.txt"), ports = [5432, 6432] } }`)
+			var (
+				variables Variables
+				err       error
+			)
+			if kind == "defaults" {
+				variables, err = ParseDefaultsSource(t.Context(), src, path)
+			} else {
+				var config *UDSBundleConfig
+				config, err = NewHCLParser("", iostreams.IOStreams{}).ParseBundleConfigSource(t.Context(), src, path)
+				if err == nil {
+					variables = config.Variables
+				}
+			}
+			require.NoError(t, err)
+			assert.Equal(t, Variables{"db": Variables{"host": "database.local", "ports": []any{float64(5432), float64(6432)}}}, variables)
+		})
+	}
+}
+
 func TestParseSetVariables(t *testing.T) {
 	tests := []struct {
 		name    string
