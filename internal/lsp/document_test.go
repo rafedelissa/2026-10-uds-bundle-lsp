@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/defenseunicorns/uds-cli/pkg/iostreams"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -17,7 +18,7 @@ func TestDocumentSynchronizationLifecycle(t *testing.T) {
 	store := newDocumentStore()
 	var output bytes.Buffer
 	writer := bufio.NewWriter(&output)
-	uri := "file:///workspace/bundle.uds.hcl"
+	uri := "file:///workspace/example.hcl"
 
 	handleNotification(t, writer, store, "textDocument/didOpen", map[string]any{
 		"textDocument": map[string]any{
@@ -72,11 +73,11 @@ func TestDocumentSynchronizationRejectsIncrementalChange(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, _, err = handleMessage(writer, message{
+	_, _, err = handleMessage(t.Context(), writer, message{
 		JSONRPC: jsonRPCVersion,
 		Method:  "textDocument/didChange",
 		Params:  params,
-	}, stateInitialized, store)
+	}, stateInitialized, store, iostreams.IOStreams{})
 
 	require.ErrorContains(t, err, "range is not supported")
 }
@@ -92,11 +93,11 @@ func handleNotification(
 
 	encoded, err := json.Marshal(params)
 	require.NoError(t, err)
-	_, nextState, err := handleMessage(writer, message{
+	_, nextState, err := handleMessage(t.Context(), writer, message{
 		JSONRPC: jsonRPCVersion,
 		Method:  method,
 		Params:  encoded,
-	}, stateInitialized, store)
+	}, stateInitialized, store, iostreams.IOStreams{})
 	require.NoError(t, err)
 	assert.Equal(t, stateInitialized, nextState)
 }

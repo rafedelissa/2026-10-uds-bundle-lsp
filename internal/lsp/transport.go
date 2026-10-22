@@ -6,6 +6,7 @@ package lsp
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -23,11 +24,11 @@ func readMessage(reader *bufio.Reader) ([]byte, error) {
 	contentLength := -1
 	for {
 		lineBytes, err := reader.ReadSlice('\n')
-		if err == bufio.ErrBufferFull || len(lineBytes) > maxHeaderLineSize {
+		if errors.Is(err, bufio.ErrBufferFull) || len(lineBytes) > maxHeaderLineSize {
 			return nil, fmt.Errorf("LSP header line exceeds %d byte limit", maxHeaderLineSize)
 		}
 		if err != nil {
-			if err == io.EOF && len(lineBytes) == 0 {
+			if errors.Is(err, io.EOF) && len(lineBytes) == 0 {
 				return nil, io.EOF
 			}
 			return nil, fmt.Errorf("read LSP header: %w", err)
@@ -46,7 +47,7 @@ func readMessage(reader *bufio.Reader) ([]byte, error) {
 			continue
 		}
 		if contentLength >= 0 {
-			return nil, fmt.Errorf("duplicate Content-Length header")
+			return nil, errors.New("duplicate Content-Length header")
 		}
 
 		contentLength, err = strconv.Atoi(strings.TrimSpace(value))
@@ -59,7 +60,7 @@ func readMessage(reader *bufio.Reader) ([]byte, error) {
 	}
 
 	if contentLength < 0 {
-		return nil, fmt.Errorf("missing Content-Length header")
+		return nil, errors.New("missing Content-Length header")
 	}
 
 	payload := make([]byte, contentLength)
@@ -69,12 +70,12 @@ func readMessage(reader *bufio.Reader) ([]byte, error) {
 	return payload, nil
 }
 
-// writeResponse writes one Content-Length-framed JSON-RPC response.
+// writeMessage writes one Content-Length-framed JSON-RPC response or notification.
 // See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/#baseProtocol.
-func writeResponse(writer *bufio.Writer, value response) error {
+func writeMessage(writer *bufio.Writer, value any) error {
 	payload, err := json.Marshal(value)
 	if err != nil {
-		return fmt.Errorf("encode LSP response: %w", err)
+		return fmt.Errorf("encode LSP message: %w", err)
 	}
 	header := "Content-Length: " + strconv.Itoa(len(payload)) + "\r\n\r\n"
 	if _, err := writer.WriteString(header); err != nil {

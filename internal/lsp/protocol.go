@@ -10,6 +10,7 @@ const (
 
 	codeParseError           = -32700
 	codeInvalidRequest       = -32600
+	codeInvalidParams        = -32602
 	codeMethodNotFound       = -32601
 	codeServerNotInitialized = -32002
 )
@@ -38,7 +39,38 @@ type initializeResult struct {
 	ServerInfo   serverInfo         `json:"serverInfo"`
 }
 
-type serverCapabilities struct{}
+// initializeParams contains client information and capabilities used by this server.
+// Unknown capabilities are ignored for forward compatibility.
+type initializeParams struct {
+	ClientInfo   *clientInfo `json:"clientInfo,omitempty"`
+	Capabilities struct {
+		TextDocument struct {
+			PublishDiagnostics struct {
+				VersionSupport bool `json:"versionSupport"`
+			} `json:"publishDiagnostics"`
+		} `json:"textDocument"`
+	} `json:"capabilities"`
+}
+
+type clientInfo struct {
+	Name    string `json:"name"`
+	Version string `json:"version,omitempty"`
+}
+
+type serverCapabilities struct {
+	PositionEncoding string                  `json:"positionEncoding"`
+	TextDocumentSync textDocumentSyncOptions `json:"textDocumentSync"`
+}
+
+type textDocumentSyncOptions struct {
+	OpenClose bool        `json:"openClose"`
+	Change    int         `json:"change"`
+	Save      saveOptions `json:"save"`
+}
+
+type saveOptions struct {
+	IncludeText bool `json:"includeText"`
+}
 
 type serverInfo struct {
 	Name string `json:"name"`

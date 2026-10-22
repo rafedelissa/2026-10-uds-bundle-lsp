@@ -143,6 +143,16 @@ func (p *HCLParser) ParseBundleBytes(ctx context.Context, src []byte) (*spec.UDS
 	return p.parseBundleContent(ctx, src, "bundle.uds.hcl", "", false)
 }
 
+// ParseBundleSource parses an editor buffer associated with a local source path.
+// It uses src instead of reading filePath, resolving file() calls relative to
+// filePath as ParseBundleFile does. The caller must trust the source content.
+func (p *HCLParser) ParseBundleSource(ctx context.Context, src []byte, filePath string) (*spec.UDSBundle, error) {
+	if filePath == "" {
+		return nil, EmptyParameterError{Name: "filePath"}
+	}
+	return p.parseBundleContent(ctx, src, filePath, filepath.Dir(filePath), true)
+}
+
 // ParseAndMaterializeBundleFile reads a source bundle once, using those bytes
 // both for runtime evaluation and the self-contained artifact representation.
 func (p *HCLParser) ParseAndMaterializeBundleFile(ctx context.Context, path string) (*spec.UDSBundle, []byte, error) {
