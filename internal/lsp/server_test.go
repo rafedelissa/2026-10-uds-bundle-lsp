@@ -38,6 +38,7 @@ func TestServeLifecycle(t *testing.T) {
 	assert.Nil(t, responses[0].Error)
 	assert.JSONEq(t, `{
 		"capabilities": {
+			"hoverProvider": true,
 			"positionEncoding": "utf-16",
 			"textDocumentSync": {"openClose": true, "change": 1, "save": {"includeText": false}}
 		},

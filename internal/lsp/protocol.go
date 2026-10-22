@@ -34,6 +34,16 @@ type responseError struct {
 	Message string `json:"message"`
 }
 
+type position struct {
+	Line      int `json:"line"`
+	Character int `json:"character"`
+}
+
+type documentRange struct {
+	Start position `json:"start"`
+	End   position `json:"end"`
+}
+
 type initializeResult struct {
 	Capabilities serverCapabilities `json:"capabilities"`
 	ServerInfo   serverInfo         `json:"serverInfo"`
@@ -45,6 +55,9 @@ type initializeParams struct {
 	ClientInfo   *clientInfo `json:"clientInfo,omitempty"`
 	Capabilities struct {
 		TextDocument struct {
+			Hover struct {
+				ContentFormat []string `json:"contentFormat"`
+			} `json:"hover"`
 			PublishDiagnostics struct {
 				VersionSupport bool `json:"versionSupport"`
 			} `json:"publishDiagnostics"`
@@ -58,6 +71,7 @@ type clientInfo struct {
 }
 
 type serverCapabilities struct {
+	HoverProvider    bool                    `json:"hoverProvider"`
 	PositionEncoding string                  `json:"positionEncoding"`
 	TextDocumentSync textDocumentSyncOptions `json:"textDocumentSync"`
 }
