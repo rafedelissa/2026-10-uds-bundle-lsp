@@ -13,15 +13,24 @@ import (
 
 func TestValuesFileCompletion(t *testing.T) {
 	tests := []struct {
-		name    string
-		marked  string
-		want    []string
-		newText string
+		name     string
+		marked   string
+		want     []string
+		newText  string
+		wantText string
 	}{
 		{name: "namespace", marked: "replicas: {{ .var| }}\n", want: []string{"vars"}, newText: "vars."},
-		{name: "top level", marked: "replicas: {{ .vars.| }}\n", want: []string{"domain", "features", "replicas"}},
+		{name: "top level", marked: "replicas: {{ .vars.| }}\n", want: []string{"annotations", "domain", "features", "replicas"}},
 		{name: "nested", marked: "audit: {{ .vars.features.| }}\n", want: []string{"audit_logs", "level"}},
-		{name: "trimmed range", marked: "{{- range .vars.| }}\n{{- end }}\n", want: []string{"domain", "features", "replicas"}},
+		{name: "trimmed range", marked: "{{- range .vars.| }}\n{{- end }}\n", want: []string{"annotations", "domain", "features", "replicas"}},
+		{name: "index key", marked: `managedBy: {{ index .vars.annotations "|" }}` + "\n", want: []string{"app.kubernetes.io/managed-by", "team"}, newText: "app.kubernetes.io/managed-by"},
+		{
+			name:     "index key without closing quote",
+			marked:   `managedBy: {{ index .vars.annotations "| }}` + "\n",
+			want:     []string{"app.kubernetes.io/managed-by", "team"},
+			newText:  `app.kubernetes.io/managed-by"`,
+			wantText: `managedBy: {{ index .vars.annotations "app.kubernetes.io/managed-by"}}` + "\n",
+		},
 		{name: "ordinary YAML", marked: "replicas: 2|\n"},
 	}
 
@@ -48,7 +57,15 @@ func TestValuesFileCompletion(t *testing.T) {
 			}
 			assert.Equal(t, tt.want, labels)
 			if tt.newText != "" {
-				assert.Equal(t, tt.newText, completionByLabel(t, result, tt.want[0]).TextEdit.NewText)
+				item := completionByLabel(t, result, tt.want[0])
+				assert.Equal(t, tt.newText, item.TextEdit.NewText)
+				if tt.wantText != "" {
+					start, ok := byteAtPosition(text, item.TextEdit.Range.Start)
+					require.True(t, ok)
+					end, ok := byteAtPosition(text, item.TextEdit.Range.End)
+					require.True(t, ok)
+					assert.Equal(t, tt.wantText, text[:start]+item.TextEdit.NewText+text[end:])
+				}
 			}
 		})
 	}
@@ -159,6 +176,10 @@ variables = {
   replicas = 2
   domain = "uds.dev"
   "invalid-key" = true
+  annotations = {
+    "app.kubernetes.io/managed-by" = "uds"
+    team = "platform"
+  }
   features = {
     audit_logs = true
     level = "info"

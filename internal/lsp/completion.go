@@ -2,6 +2,7 @@ package lsp
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,10 +34,12 @@ type textEdit struct {
 }
 
 type templateCursor struct {
-	parentNames []string
-	start       int
-	end         int
-	isNamespace bool
+	parentNames       []string
+	start             int
+	end               int
+	isNamespace       bool
+	isIndexKey        bool
+	needsClosingQuote bool
 }
 
 const (
@@ -167,12 +170,21 @@ func (s *documentStore) completeValuesFile(ctx context.Context, doc document, of
 
 	names := make([]string, 0, len(variables))
 	for name := range variables {
-		if isTemplateIdentifier(name) {
+		if cursor.isIndexKey || isTemplateIdentifier(name) {
 			names = append(names, name)
 		}
 	}
 	sort.Strings(names)
 	for _, name := range names {
+		newText := name
+		if cursor.isIndexKey {
+			quoted := strconv.Quote(name)
+			end := len(quoted) - 1
+			if cursor.needsClosingQuote {
+				end++
+			}
+			newText = quoted[1:end]
+		}
 		result.Items = append(result.Items, completionItem{
 			Label:            name,
 			Kind:             completionItemKindProperty,
@@ -181,7 +193,7 @@ func (s *documentStore) completeValuesFile(ctx context.Context, doc document, of
 			FilterText:       name,
 			InsertTextFormat: insertTextFormatPlainText,
 			SortText:         completionSortPrefix + name,
-			TextEdit:         textEdit{Range: r, NewText: name},
+			TextEdit:         textEdit{Range: r, NewText: newText},
 		})
 	}
 	return result
@@ -191,6 +203,14 @@ func templateCursorAt(text string, offset int) (templateCursor, bool) {
 	if offset < 0 || offset > len(text) {
 		return templateCursor{}, false
 	}
+	open := strings.LastIndex(text[:offset], "{{")
+	if open < 0 || strings.LastIndex(text[:offset], "}}") > open {
+		return templateCursor{}, false
+	}
+	if cursor, found := templateIndexCursorAt(text, open, offset); found {
+		return cursor, true
+	}
+
 	start, end := offset, offset
 	for start > 0 && isTemplateIdentifierByte(text[start-1]) {
 		start--
@@ -199,10 +219,6 @@ func templateCursorAt(text string, offset int) (templateCursor, bool) {
 		end++
 	}
 
-	open := strings.LastIndex(text[:start], "{{")
-	if open < 0 || strings.LastIndex(text[:start], "}}") > open {
-		return templateCursor{}, false
-	}
 	pathStart := start
 	for pathStart > open+2 && (text[pathStart-1] == '.' || isTemplateIdentifierByte(text[pathStart-1])) {
 		pathStart--
@@ -219,13 +235,80 @@ func templateCursorAt(text string, offset int) (templateCursor, bool) {
 	var parents []string
 	if parentPath != "" {
 		parents = strings.Split(parentPath, ".")
-		for _, parent := range parents {
-			if parent == "" {
-				return templateCursor{}, false
-			}
+		if slices.Contains(parents, "") {
+			return templateCursor{}, false
 		}
 	}
 	return templateCursor{parentNames: parents, start: start, end: end}, true
+}
+
+func templateIndexCursorAt(text string, open, offset int) (templateCursor, bool) {
+	quoteStart := -1
+	escaped := false
+	for i := open + 2; i < offset; i++ {
+		switch {
+		case escaped:
+			escaped = false
+		case text[i] == '\\':
+			escaped = true
+		case text[i] == '"':
+			if quoteStart == -1 {
+				quoteStart = i
+			} else {
+				quoteStart = -1
+			}
+		}
+	}
+	if quoteStart == -1 {
+		return templateCursor{}, false
+	}
+
+	prefix := strings.TrimSpace(text[open+2 : quoteStart])
+	prefix = strings.TrimSpace(strings.TrimPrefix(prefix, "-"))
+	parts := strings.Fields(prefix)
+	if len(parts) != 2 || parts[0] != "index" {
+		return templateCursor{}, false
+	}
+
+	var parents []string
+	switch {
+	case parts[1] == ".vars":
+	case strings.HasPrefix(parts[1], ".vars."):
+		parents = strings.Split(parts[1][len(".vars."):], ".")
+		for _, parent := range parents {
+			if !isTemplateIdentifier(parent) {
+				return templateCursor{}, false
+			}
+		}
+	default:
+		return templateCursor{}, false
+	}
+
+	cursor := templateCursor{
+		parentNames:       parents,
+		start:             quoteStart + 1,
+		end:               offset,
+		isIndexKey:        true,
+		needsClosingQuote: true,
+	}
+	escaped = false
+	for end := offset; end < len(text); end++ {
+		switch {
+		case escaped:
+			escaped = false
+		case text[end] == '\\':
+			escaped = true
+		case text[end] == '"':
+			cursor.end = end
+			cursor.needsClosingQuote = false
+			return cursor, true
+		case text[end] == '\n' || end+1 < len(text) && text[end:end+2] == "}}":
+			cursor.end = end
+			return cursor, true
+		}
+	}
+	cursor.end = len(text)
+	return cursor, true
 }
 
 func isTemplateIdentifier(name string) bool {
