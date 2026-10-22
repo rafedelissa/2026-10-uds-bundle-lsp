@@ -24,12 +24,17 @@ func TestBundleDefinitionFields(t *testing.T) {
 	assert.False(t, pkg.Required, "package count is validated by domain rules, not the decoder")
 	assert.Equal(t, DefinitionField{Name: "source", Type: "string", Required: true}, definitionField(t, pkg.Fields, "source"))
 	assert.Equal(t, DefinitionField{Name: "values_files", Type: "list(string)"}, definitionField(t, pkg.Fields, "values_files"))
+	assert.Equal(t, DefinitionField{Name: "depends_on", Type: "list(package reference)"}, definitionField(t, pkg.Fields, "depends_on"))
 	verification := definitionField(t, pkg.Fields, "signature_verification")
 	assert.False(t, verification.Required)
 	assert.Equal(t, DefinitionField{Name: "verify", Type: "bool"}, definitionField(t, verification.Fields, "verify"))
 	keyless := definitionField(t, verification.Fields, "keyless")
 	assert.Equal(t, "bool", definitionField(t, keyless.Fields, "insecure_ignore_tlog").Type)
 	assert.Equal(t, "string", definitionField(t, keyless.Fields, "certificate_identity").Type)
+
+	locals := definitionField(t, fields, "locals")
+	assert.Equal(t, "block", locals.Type)
+	assert.True(t, locals.Repeated)
 
 	for _, field := range pkg.Fields {
 		assert.NotEqual(t, "DependsOn", field.Name)

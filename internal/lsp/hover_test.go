@@ -33,7 +33,7 @@ func TestBundleHover(t *testing.T) {
 		{name: "unicode and CRLF", text: "# 😀é\r\npackage \"😀app\" { so|urce = \"app\" }\r\n", want: []string{"source = \"...\""}},
 		{name: "unknown attribute", text: "metadata { un|known = 1 }\n"},
 		{name: "unknown block", text: "unknown { na|me = \"app\" }\n"},
-		{name: "custom dependency", text: "package \"app\" {\n depends_|on = []\n}\n"},
+		{name: "custom dependency", text: "package \"app\" {\n depends_|on = []\n}\n", want: []string{"depends_on = []", "`list(package reference)`", "**Optional**"}},
 		{name: "custom locals", text: "locals { so|urce = \"app\" }\n"},
 		{name: "value", text: "metadata { name = \"ex|ample\" }\n"},
 		{name: "comment", text: "# so|urce\n"},

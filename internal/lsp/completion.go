@@ -23,6 +23,7 @@ type completionItem struct {
 	Documentation    markupContent `json:"documentation"`
 	FilterText       string        `json:"filterText"`
 	InsertTextFormat int           `json:"insertTextFormat"`
+	SortText         string        `json:"sortText,omitempty"`
 	TextEdit         textEdit      `json:"textEdit"`
 }
 
@@ -30,6 +31,16 @@ type textEdit struct {
 	Range   documentRange `json:"range"`
 	NewText string        `json:"newText"`
 }
+
+const (
+	insertTextFormatPlainText   = 1
+	insertTextFormatSnippet     = 2
+	completionItemKindVariable  = 6
+	completionItemKindModule    = 9
+	completionItemKindProperty  = 10
+	completionItemKindSnippet   = 15
+	completionItemKindReference = 18
+)
 
 func (s *documentStore) complete(params documentPositionParams) completionList {
 	result := completionList{Items: make([]completionItem, 0)}
@@ -46,10 +57,11 @@ func (s *documentStore) complete(params documentPositionParams) completionList {
 		return result
 	}
 	start, end, next := completionWord(doc.Text, doc.URI, offset)
-	marker := "_uds_completion"
-	for strings.Contains(doc.Text, marker) {
-		marker += "_"
+	marker := completionMarker(doc.Text)
+	if references, found := s.completeReference(doc, start, end, next, marker); found {
+		return references
 	}
+
 	// Repair only the word being completed in a temporary buffer. The HCL
 	// parser can then locate its containing body while a field is half typed.
 	// In expressions, strings, and comments the marker is not a body attribute,
@@ -82,17 +94,17 @@ func (s *documentStore) complete(params documentPositionParams) completionList {
 			continue
 		}
 		item := completionItem{
-			Label: field.Name, FilterText: field.Name, Kind: 10, // CompletionItemKind.Property
+			Label: field.Name, FilterText: field.Name, Kind: completionItemKindProperty,
 			Detail:        field.Type,
 			Documentation: markupContent{Kind: format, Value: fieldHoverText(field, format)},
 			TextEdit:      textEdit{Range: r},
 		}
 		if isBlock {
-			item.Kind = 15 // CompletionItemKind.Snippet
+			item.Kind = completionItemKindSnippet
 		}
 		if next == hclsyntax.TokenEqual || header {
 			// Preserve an assignment or block body that is already present.
-			item.TextEdit.NewText, item.InsertTextFormat = field.Name, 1
+			item.TextEdit.NewText, item.InsertTextFormat = field.Name, insertTextFormatPlainText
 		} else {
 			item.TextEdit.NewText, item.InsertTextFormat = completionInsertion(field, s.completionSnippetSupport)
 			if isBlock {
@@ -119,6 +131,15 @@ func blockCompletionLines(text string, start, end int, insertion string) string 
 		insertion += "\n" + indent
 	}
 	return insertion
+}
+
+func completionMarker(text string) string {
+	var marker strings.Builder
+	marker.WriteString("_uds_completion")
+	for strings.Contains(text, marker.String()) {
+		marker.WriteByte('_')
+	}
+	return marker.String()
 }
 
 // completionWord includes the whole identifier so completion in the middle of
@@ -191,10 +212,10 @@ func completionInsertion(field bundle.DefinitionField, snippets bool) (string, i
 		}
 		if snippets {
 			text.WriteString(" {\n  $0\n}")
-			return text.String(), 2 // InsertTextFormat.Snippet
+			return text.String(), insertTextFormatSnippet
 		}
 		text.WriteString(" {\n  \n}")
-		return text.String(), 1 // InsertTextFormat.PlainText
+		return text.String(), insertTextFormatPlainText
 	}
 	value := "{}"
 	if snippets {
@@ -205,12 +226,14 @@ func completionInsertion(field bundle.DefinitionField, snippets bool) (string, i
 			value = "${1|true,false|}"
 		case field.Type == "number":
 			value = "${1:0}"
+		case field.Name == "depends_on":
+			value = "[package.${1:name}]"
 		case strings.HasPrefix(field.Type, "list("):
 			value = "[${1}]"
 		default:
 			value = "{${1}}"
 		}
-		return field.Name + " = " + value + "$0", 2
+		return field.Name + " = " + value + "$0", insertTextFormatSnippet
 	}
 	switch {
 	case field.Type == "string":
@@ -222,5 +245,5 @@ func completionInsertion(field bundle.DefinitionField, snippets bool) (string, i
 	case strings.HasPrefix(field.Type, "list("):
 		value = "[]"
 	}
-	return field.Name + " = " + value, 1
+	return field.Name + " = " + value, insertTextFormatPlainText
 }
