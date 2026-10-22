@@ -82,6 +82,7 @@ type serverCapabilities struct {
 	DocumentHighlightProvider bool                    `json:"documentHighlightProvider"`
 	HoverProvider             bool                    `json:"hoverProvider"`
 	PositionEncoding          string                  `json:"positionEncoding"`
+	RenameProvider            bool                    `json:"renameProvider"`
 	TextDocumentSync          textDocumentSyncOptions `json:"textDocumentSync"`
 }
 

@@ -43,6 +43,7 @@ func TestServeLifecycle(t *testing.T) {
 			"documentHighlightProvider": true,
 			"hoverProvider": true,
 			"positionEncoding": "utf-16",
+			"renameProvider": true,
 			"textDocumentSync": {"openClose": true, "change": 1, "save": {"includeText": false}}
 		},
 		"serverInfo": {"name": "uds-lsp"}

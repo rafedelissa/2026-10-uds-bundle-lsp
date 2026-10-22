@@ -142,6 +142,7 @@ func handleMessage(ctx context.Context, writer *bufio.Writer, msg message, state
 				DocumentHighlightProvider: true,
 				HoverProvider:             true,
 				PositionEncoding:          "utf-16",
+				RenameProvider:            true,
 				TextDocumentSync: textDocumentSyncOptions{
 					OpenClose: true,
 					Change:    1, // TextDocumentSyncKind.Full
@@ -175,6 +176,26 @@ func handleMessage(ctx context.Context, writer *bufio.Writer, msg message, state
 		return handleDocumentNotification(ctx, writer, msg, state, documents, documents.didSave)
 	case "textDocument/didClose":
 		return handleDocumentNotification(ctx, writer, msg, state, documents, documents.didClose)
+	case "textDocument/rename":
+		if msg.ID == nil {
+			return false, state, nil
+		}
+		if state != stateInitialized {
+			return false, state, writeError(writer, msg.ID, codeServerNotInitialized, "server not initialized")
+		}
+		var params renameParams
+		if err := json.Unmarshal(msg.Params, &params); err != nil || params.TextDocument.URI == "" || params.Position == nil || params.Position.Line < 0 || params.Position.Character < 0 {
+			return false, state, writeError(writer, msg.ID, codeInvalidParams, "invalid rename parameters")
+		}
+		edit, err := documents.rename(params)
+		if err != nil {
+			return false, state, writeError(writer, msg.ID, codeInvalidParams, err.Error())
+		}
+		result, err := json.Marshal(edit)
+		if err != nil {
+			return false, state, fmt.Errorf("encode rename result: %w", err)
+		}
+		return false, state, writeResult(writer, msg.ID, result)
 	case "textDocument/hover", "textDocument/completion", "textDocument/definition", "textDocument/documentHighlight":
 		if msg.ID == nil {
 			return false, state, nil
