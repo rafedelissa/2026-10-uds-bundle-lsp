@@ -98,16 +98,13 @@ func definitionFieldAtPos(body *hclsyntax.Body, fields []bundle.DefinitionField,
 }
 
 func fieldHoverText(field bundle.DefinitionField, format string) string {
-	code := func(value string) string {
-		if format == "markdown" {
-			return "`" + value + "`"
-		}
-		return value
-	}
 	var heading strings.Builder
 	heading.WriteString(field.Name)
 	for _, label := range field.Labels {
 		heading.WriteString(" " + strconv.Quote("<"+label+">"))
+	}
+	if format == "markdown" {
+		return markdownFieldHover(field, heading.String())
 	}
 	kind := field.Type
 	if field.Repeated {
@@ -118,7 +115,7 @@ func fieldHoverText(field bundle.DefinitionField, format string) string {
 		required = "yes"
 	}
 	var text strings.Builder
-	text.WriteString(code(heading.String()) + "\n\nType: " + code(kind) + "\n\nRequired by parser: " + required)
+	text.WriteString(heading.String() + "\n\nType: " + kind + "\n\nRequired by parser: " + required)
 	if len(field.Fields) > 0 {
 		text.WriteString("\n\nFields:")
 		for _, child := range field.Fields {
@@ -126,7 +123,46 @@ func fieldHoverText(field bundle.DefinitionField, format string) string {
 			if child.Required {
 				requirement = "required"
 			}
-			text.WriteString("\n- " + code(child.Name) + ": " + code(child.Type) + " (" + requirement + ")")
+			text.WriteString("\n- " + child.Name + ": " + child.Type + " (" + requirement + ")")
+		}
+	}
+	return text.String()
+}
+
+func markdownFieldHover(field bundle.DefinitionField, heading string) string {
+	requirement := "Optional"
+	if field.Required {
+		requirement = "Required"
+	}
+	if field.Type != "block" {
+		example := "{}"
+		switch {
+		case field.Type == "string":
+			example = `"..."`
+		case field.Type == "bool":
+			example = "false"
+		case field.Type == "number":
+			example = "0"
+		case strings.HasPrefix(field.Type, "list("):
+			example = "[]"
+		}
+		return "```hcl\n" + field.Name + " = " + example + "\n```\n\n**" + requirement + "** · Type: `" + field.Type + "` · *Parser schema*"
+	}
+
+	kind := "block"
+	if field.Repeated {
+		kind = "repeatable block"
+	}
+	var text strings.Builder
+	text.WriteString("**`" + heading + "`**\n\n*Parser schema · " + kind + " · " + strings.ToLower(requirement) + "*")
+	if len(field.Fields) > 0 {
+		text.WriteString("\n\n| Field | Type | Required |\n| --- | --- | --- |")
+		for _, child := range field.Fields {
+			required := "No"
+			if child.Required {
+				required = "Yes"
+			}
+			text.WriteString("\n| `" + child.Name + "` | `" + child.Type + "` | " + required + " |")
 		}
 	}
 	return text.String()

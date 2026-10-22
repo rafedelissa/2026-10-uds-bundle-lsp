@@ -20,17 +20,17 @@ func TestBundleHover(t *testing.T) {
 		text string
 		want []string
 	}{
-		{name: "required attribute", text: "package \"app\" {\n  so|urce = \"app\"\n}\n", want: []string{"`source`", "`string`", "Required by parser: yes"}},
-		{name: "optional list", text: "package \"app\" {\n  values_|files = []\n}\n", want: []string{"`values_files`", "`list(string)`", "Required by parser: no"}},
-		{name: "optional pointer", text: "package \"app\" {\n signature_verification {\n ver|ify = false\n }\n}\n", want: []string{"`verify`", "`bool`", "Required by parser: no"}},
+		{name: "required attribute", text: "package \"app\" {\n  so|urce = \"app\"\n}\n", want: []string{"```hcl\nsource = \"...\"\n```", "**Required**", "Type: `string`", "*Parser schema*"}},
+		{name: "optional list", text: "package \"app\" {\n  values_|files = []\n}\n", want: []string{"```hcl\nvalues_files = []\n```", "`list(string)`", "**Optional**"}},
+		{name: "optional pointer", text: "package \"app\" {\n signature_verification {\n ver|ify = false\n }\n}\n", want: []string{"```hcl\nverify = false\n```", "`bool`", "**Optional**"}},
 		{name: "nested block", text: "package \"app\" {\n signature_verification {\n key|less {}\n }\n}\n", want: []string{"`keyless`", "`certificate_identity`", "`insecure_ignore_tlog`"}},
-		{name: "block overview", text: "pack|age \"app\" {\n source = \"app\"\n}\n", want: []string{"`package \"<name>\"`", "repeatable", "`source`: `string` (required)", "`signature_verification`: `block` (optional)"}},
+		{name: "block overview", text: "pack|age \"app\" {\n source = \"app\"\n}\n", want: []string{"**`package \"<name>\"`**", "repeatable", "| Field | Type | Required |", "| `source` | `string` | Yes |", "| `signature_verification` | `block` | No |"}},
 		{name: "package label", text: "package \"ap|p\" {\n source = \"app\"\n}\n", want: []string{"`package \"<name>\"`"}},
-		{name: "metadata field", text: "metadata { na|me = \"example\" }\n", want: []string{"`name`", "Required by parser: yes"}},
-		{name: "semantic errors elsewhere", text: "metadata { na|me = local.missing }\n", want: []string{"`name`", "`string`"}},
-		{name: "unevaluated file function", text: "metadata { na|me = file(\"/missing/hover-must-not-read-this\") }\n", want: []string{"`name`", "`string`"}},
-		{name: "incomplete file", text: "package \"app\" {\n so|urce = \"app\"\n", want: []string{"`source`", "`string`"}},
-		{name: "unicode and CRLF", text: "# 😀é\r\npackage \"😀app\" { so|urce = \"app\" }\r\n", want: []string{"`source`"}},
+		{name: "metadata field", text: "metadata { na|me = \"example\" }\n", want: []string{"name = \"...\"", "**Required**"}},
+		{name: "semantic errors elsewhere", text: "metadata { na|me = local.missing }\n", want: []string{"name = \"...\"", "`string`"}},
+		{name: "unevaluated file function", text: "metadata { na|me = file(\"/missing/hover-must-not-read-this\") }\n", want: []string{"name = \"...\"", "`string`"}},
+		{name: "incomplete file", text: "package \"app\" {\n so|urce = \"app\"\n", want: []string{"source = \"...\"", "`string`"}},
+		{name: "unicode and CRLF", text: "# 😀é\r\npackage \"😀app\" { so|urce = \"app\" }\r\n", want: []string{"source = \"...\""}},
 		{name: "unknown attribute", text: "metadata { un|known = 1 }\n"},
 		{name: "unknown block", text: "unknown { na|me = \"app\" }\n"},
 		{name: "custom dependency", text: "package \"app\" {\n depends_|on = []\n}\n"},
@@ -133,6 +133,14 @@ func TestServeHoverLifecycle(t *testing.T) {
 			assert.Equal(t, wantFormat, result.Contents.Kind)
 			assert.Contains(t, result.Contents.Value, "name")
 			assert.Contains(t, result.Contents.Value, "string")
+			if wantFormat == "markdown" {
+				assert.Contains(t, result.Contents.Value, "```hcl\nname = \"...\"\n```")
+				assert.Contains(t, result.Contents.Value, "**Required**")
+			} else {
+				assert.Contains(t, result.Contents.Value, "Required by parser: yes")
+				assert.NotContains(t, result.Contents.Value, "```")
+				assert.NotContains(t, result.Contents.Value, "**")
+			}
 			require.NotNil(t, responses[`"invalid"`].Error)
 			assert.Equal(t, codeInvalidParams, responses[`"invalid"`].Error.Code)
 			require.NotNil(t, responses[`"after"`].Error)
