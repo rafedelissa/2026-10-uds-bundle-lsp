@@ -78,6 +78,7 @@ type clientInfo struct {
 
 type serverCapabilities struct {
 	CompletionProvider completionOptions       `json:"completionProvider"`
+	DefinitionProvider bool                    `json:"definitionProvider"`
 	HoverProvider      bool                    `json:"hoverProvider"`
 	PositionEncoding   string                  `json:"positionEncoding"`
 	TextDocumentSync   textDocumentSyncOptions `json:"textDocumentSync"`

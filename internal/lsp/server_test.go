@@ -39,6 +39,7 @@ func TestServeLifecycle(t *testing.T) {
 	assert.JSONEq(t, `{
 		"capabilities": {
 			"completionProvider": {"resolveProvider": false, "triggerCharacters": ["{"]},
+			"definitionProvider": true,
 			"hoverProvider": true,
 			"positionEncoding": "utf-16",
 			"textDocumentSync": {"openClose": true, "change": 1, "save": {"includeText": false}}

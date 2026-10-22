@@ -2,5 +2,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
 
 // Package lsp implements the Language Server Protocol transport, lifecycle,
-// document synchronization, diagnostics, hover, and completion for Next bundles.
+// document synchronization, diagnostics, hover, completion, and definition lookup for Next bundles.
 package lsp
