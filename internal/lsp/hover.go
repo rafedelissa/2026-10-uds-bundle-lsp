@@ -1,8 +1,6 @@
 package lsp
 
 import (
-	"net/url"
-	"path"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -32,8 +30,8 @@ func (s *documentStore) hover(params documentPositionParams) *hoverResult {
 	if !found {
 		return nil
 	}
-	uri, _ := url.Parse(doc.URI)
-	if uri == nil || path.Base(uri.Path) != bundle.BundleFileName {
+	definitionFields, _ := definitionFieldsForDocument(doc.URI)
+	if definitionFields == nil {
 		return nil
 	}
 	offset, ok := byteAtPosition(doc.Text, *params.Position)
@@ -50,7 +48,7 @@ func (s *documentStore) hover(params documentPositionParams) *hoverResult {
 	if !ok {
 		return nil
 	}
-	field, sourceRange := definitionFieldAtPos(body, bundle.BundleDefinitionFields(), hcl.Pos{Byte: offset})
+	field, sourceRange := definitionFieldAtPos(body, definitionFields, hcl.Pos{Byte: offset})
 	if field == nil {
 		return nil
 	}

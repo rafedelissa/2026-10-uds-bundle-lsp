@@ -20,6 +20,8 @@ import (
 )
 
 const (
+	// BundleConfigFileName is the conventional deploy-time configuration filename.
+	BundleConfigFileName = "config.uds.hcl"
 	// BundleDefaultsFileName is the name of the optional bundle-level defaults file.
 	BundleDefaultsFileName = "defaults.uds.hcl"
 	// MaxConcurrency is the upper bound for parallel package deploys within a level.
