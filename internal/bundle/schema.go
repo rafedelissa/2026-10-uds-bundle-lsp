@@ -20,9 +20,20 @@ type DefinitionField struct {
 }
 
 // BundleDefinitionFields derives structural editor information from the Next
-// decoder. Custom-parsed content without HCL field tags is excluded.
+// decoder and includes the locals and depends_on syntax parsed separately from
+// the tagged decoder structs.
 func BundleDefinitionFields() []DefinitionField {
-	return definitionFields(reflect.TypeFor[decodedBundle]())
+	fields := definitionFields(reflect.TypeFor[decodedBundle]())
+	for i := range fields {
+		if fields[i].Name == "package" {
+			fields[i].Fields = append(fields[i].Fields, DefinitionField{
+				Name: "depends_on",
+				Type: "list(package reference)",
+			})
+			break
+		}
+	}
+	return append(fields, DefinitionField{Name: "locals", Type: "block", Repeated: true})
 }
 
 func definitionFields(t reflect.Type) []DefinitionField {
