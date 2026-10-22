@@ -69,6 +69,61 @@ func TestBundleHover(t *testing.T) {
 	}
 }
 
+func TestFileSpecificHover(t *testing.T) {
+	tests := []struct {
+		name   string
+		uri    string
+		marked string
+		want   []string
+	}{
+		{
+			name:   "config option",
+			uri:    "file:///workspace/config.uds.hcl",
+			marked: "options { concur|rency = 4 }\n",
+			want:   []string{"concurrency = 0", "`number`", "**Optional**"},
+		},
+		{
+			name:   "config verification",
+			uri:    "file:///workspace/config.uds.hcl",
+			marked: "signature_verification { public_|key = \"key\" }\n",
+			want:   []string{"public_key = \"...\"", "`string`"},
+		},
+		{
+			name:   "defaults variables",
+			uri:    "file:///workspace/defaults.uds.hcl",
+			marked: "vari|ables = {}\n",
+			want:   []string{"variables = {}", "`object`"},
+		},
+		{
+			name:   "bundle field excluded from config",
+			uri:    "file:///workspace/config.uds.hcl",
+			marked: "metadata { na|me = \"app\" }\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			text, pos := hoverPosition(t, tt.marked)
+			store := newDocumentStore()
+			store.hoverContentFormat = "markdown"
+			store.documents[tt.uri] = document{URI: tt.uri, Text: text}
+
+			result := store.hover(documentPositionParams{
+				TextDocument: textDocumentIdentifier{URI: tt.uri},
+				Position:     &pos,
+			})
+			if len(tt.want) == 0 {
+				assert.Nil(t, result)
+				return
+			}
+			require.NotNil(t, result)
+			for _, want := range tt.want {
+				assert.Contains(t, result.Contents.Value, want)
+			}
+		})
+	}
+}
+
 func TestServeHoverLifecycle(t *testing.T) {
 	for _, formats := range [][]string{nil, {"markdown", "plaintext"}, {"plaintext", "markdown"}} {
 		t.Run(strings.Join(formats, ","), func(t *testing.T) {

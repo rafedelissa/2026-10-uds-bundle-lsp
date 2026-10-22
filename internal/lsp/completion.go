@@ -1,8 +1,6 @@
 package lsp
 
 import (
-	"net/url"
-	"path"
 	"strconv"
 	"strings"
 
@@ -48,8 +46,8 @@ func (s *documentStore) complete(params documentPositionParams) completionList {
 	if !found {
 		return result
 	}
-	uri, _ := url.Parse(doc.URI)
-	if uri == nil || path.Base(uri.Path) != bundle.BundleFileName {
+	definitionFields, isBundle := definitionFieldsForDocument(doc.URI)
+	if definitionFields == nil {
 		return result
 	}
 	offset, ok := byteAtPosition(doc.Text, *params.Position)
@@ -58,8 +56,10 @@ func (s *documentStore) complete(params documentPositionParams) completionList {
 	}
 	start, end, next := completionWord(doc.Text, doc.URI, offset)
 	marker := completionMarker(doc.Text)
-	if references, found := s.completeReference(doc, start, end, next, marker); found {
-		return references
+	if isBundle {
+		if references, found := s.completeReference(doc, start, end, next, marker); found {
+			return references
+		}
 	}
 
 	// Repair only the word being completed in a temporary buffer. The HCL
@@ -78,7 +78,7 @@ func (s *documentStore) complete(params documentPositionParams) completionList {
 	if !ok {
 		return result
 	}
-	fields, current := completionBody(body, bundle.BundleDefinitionFields(), marker)
+	fields, current := completionBody(body, definitionFields, marker)
 	if current == nil {
 		return result
 	}

@@ -36,6 +36,17 @@ func BundleDefinitionFields() []DefinitionField {
 	return append(fields, DefinitionField{Name: "locals", Type: "block", Repeated: true})
 }
 
+// ConfigDefinitionFields derives structural editor information for config.uds.hcl.
+func ConfigDefinitionFields() []DefinitionField {
+	fields := definitionFields(reflect.TypeFor[UDSBundleConfig]())
+	return append(fields, DefinitionField{Name: "variables", Type: "object"})
+}
+
+// DefaultsDefinitionFields returns the variables-only defaults.uds.hcl schema.
+func DefaultsDefinitionFields() []DefinitionField {
+	return []DefinitionField{{Name: "variables", Type: "object"}}
+}
+
 func definitionFields(t reflect.Type) []DefinitionField {
 	schema, _ := gohcl.ImpliedBodySchema(reflect.New(t).Interface())
 	required := make(map[string]bool, len(schema.Attributes))
