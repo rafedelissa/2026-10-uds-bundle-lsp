@@ -2,7 +2,6 @@ package lsp
 
 import (
 	"context"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -235,8 +234,10 @@ func templateCursorAt(text string, offset int) (templateCursor, bool) {
 	var parents []string
 	if parentPath != "" {
 		parents = strings.Split(parentPath, ".")
-		if slices.Contains(parents, "") {
-			return templateCursor{}, false
+		for _, parent := range parents {
+			if parent == "" {
+				return templateCursor{}, false
+			}
 		}
 	}
 	return templateCursor{parentNames: parents, start: start, end: end}, true
