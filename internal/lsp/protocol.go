@@ -77,10 +77,12 @@ type clientInfo struct {
 }
 
 type serverCapabilities struct {
-	CompletionProvider completionOptions       `json:"completionProvider"`
-	HoverProvider      bool                    `json:"hoverProvider"`
-	PositionEncoding   string                  `json:"positionEncoding"`
-	TextDocumentSync   textDocumentSyncOptions `json:"textDocumentSync"`
+	CompletionProvider        completionOptions       `json:"completionProvider"`
+	DefinitionProvider        bool                    `json:"definitionProvider"`
+	DocumentHighlightProvider bool                    `json:"documentHighlightProvider"`
+	HoverProvider             bool                    `json:"hoverProvider"`
+	PositionEncoding          string                  `json:"positionEncoding"`
+	TextDocumentSync          textDocumentSyncOptions `json:"textDocumentSync"`
 }
 
 type completionOptions struct {
