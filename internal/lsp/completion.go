@@ -1,8 +1,8 @@
 package lsp
 
 import (
-	"net/url"
-	"path"
+	"context"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -32,6 +32,15 @@ type textEdit struct {
 	NewText string        `json:"newText"`
 }
 
+type templateCursor struct {
+	parentNames       []string
+	start             int
+	end               int
+	isNamespace       bool
+	isIndexKey        bool
+	needsClosingQuote bool
+}
+
 const (
 	insertTextFormatPlainText   = 1
 	insertTextFormatSnippet     = 2
@@ -42,24 +51,26 @@ const (
 	completionItemKindReference = 18
 )
 
-func (s *documentStore) complete(params documentPositionParams) completionList {
+func (s *documentStore) complete(ctx context.Context, params documentPositionParams) completionList {
 	result := completionList{Items: make([]completionItem, 0)}
 	doc, found := s.document(params.TextDocument.URI)
 	if !found {
-		return result
-	}
-	uri, _ := url.Parse(doc.URI)
-	if uri == nil || path.Base(uri.Path) != bundle.BundleFileName {
 		return result
 	}
 	offset, ok := byteAtPosition(doc.Text, *params.Position)
 	if !ok {
 		return result
 	}
+	definitionFields, isBundle := definitionFieldsForDocument(doc.URI)
+	if definitionFields == nil {
+		return s.completeValuesFile(ctx, doc, offset)
+	}
 	start, end, next := completionWord(doc.Text, doc.URI, offset)
 	marker := completionMarker(doc.Text)
-	if references, found := s.completeReference(doc, start, end, next, marker); found {
-		return references
+	if isBundle {
+		if references, found := s.completeReference(doc, start, end, next, marker); found {
+			return references
+		}
 	}
 
 	// Repair only the word being completed in a temporary buffer. The HCL
@@ -78,7 +89,7 @@ func (s *documentStore) complete(params documentPositionParams) completionList {
 	if !ok {
 		return result
 	}
-	fields, current := completionBody(body, bundle.BundleDefinitionFields(), marker)
+	fields, current := completionBody(body, definitionFields, marker)
 	if current == nil {
 		return result
 	}
@@ -114,6 +125,207 @@ func (s *documentStore) complete(params documentPositionParams) completionList {
 		result.Items = append(result.Items, item)
 	}
 	return result
+}
+
+// completeValuesFile provides .vars path completion in referenced YAML values files.
+func (s *documentStore) completeValuesFile(ctx context.Context, doc document, offset int) completionList {
+	result := completionList{Items: make([]completionItem, 0)}
+	cursor, found := templateCursorAt(doc.Text, offset)
+	if !found {
+		return result
+	}
+	variables := s.variablesForValuesFile(ctx, doc.URI)
+	if len(variables) == 0 {
+		return result
+	}
+
+	for _, parent := range cursor.parentNames {
+		nested, ok := variables[parent].(bundle.Variables)
+		if !ok {
+			return result
+		}
+		variables = nested
+	}
+
+	r := documentRange{Start: positionAtByte(doc.Text, cursor.start), End: positionAtByte(doc.Text, cursor.end)}
+	format := hoverContentFormat([]string{s.completionContentFormat})
+	if cursor.isNamespace {
+		newText := "vars."
+		if cursor.end < len(doc.Text) && doc.Text[cursor.end] == '.' {
+			newText = "vars"
+		}
+		result.Items = append(result.Items, completionItem{
+			Label:            "vars",
+			Kind:             completionItemKindModule,
+			Detail:           "UDS deploy-time variables",
+			Documentation:    markupContent{Kind: format, Value: "UDS deploy-time variables"},
+			FilterText:       "vars",
+			InsertTextFormat: insertTextFormatPlainText,
+			SortText:         completionSortPrefix + "vars",
+			TextEdit:         textEdit{Range: r, NewText: newText},
+		})
+		return result
+	}
+
+	names := make([]string, 0, len(variables))
+	for name := range variables {
+		if cursor.isIndexKey || isTemplateIdentifier(name) {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		newText := name
+		if cursor.isIndexKey {
+			quoted := strconv.Quote(name)
+			end := len(quoted) - 1
+			if cursor.needsClosingQuote {
+				end++
+			}
+			newText = quoted[1:end]
+		}
+		result.Items = append(result.Items, completionItem{
+			Label:            name,
+			Kind:             completionItemKindProperty,
+			Detail:           "deploy-time variable",
+			Documentation:    markupContent{Kind: format, Value: "UDS deploy-time variable"},
+			FilterText:       name,
+			InsertTextFormat: insertTextFormatPlainText,
+			SortText:         completionSortPrefix + name,
+			TextEdit:         textEdit{Range: r, NewText: newText},
+		})
+	}
+	return result
+}
+
+func templateCursorAt(text string, offset int) (templateCursor, bool) {
+	if offset < 0 || offset > len(text) {
+		return templateCursor{}, false
+	}
+	open := strings.LastIndex(text[:offset], "{{")
+	if open < 0 || strings.LastIndex(text[:offset], "}}") > open {
+		return templateCursor{}, false
+	}
+	if cursor, found := templateIndexCursorAt(text, open, offset); found {
+		return cursor, true
+	}
+
+	start, end := offset, offset
+	for start > 0 && isTemplateIdentifierByte(text[start-1]) {
+		start--
+	}
+	for end < len(text) && isTemplateIdentifierByte(text[end]) {
+		end++
+	}
+
+	pathStart := start
+	for pathStart > open+2 && (text[pathStart-1] == '.' || isTemplateIdentifierByte(text[pathStart-1])) {
+		pathStart--
+	}
+	prefix := text[pathStart:start]
+	if prefix == "." {
+		return templateCursor{start: start, end: end, isNamespace: true}, true
+	}
+	if !strings.HasPrefix(prefix, ".vars.") {
+		return templateCursor{}, false
+	}
+
+	parentPath := strings.TrimSuffix(prefix[len(".vars."):], ".")
+	var parents []string
+	if parentPath != "" {
+		parents = strings.Split(parentPath, ".")
+		for _, parent := range parents {
+			if parent == "" {
+				return templateCursor{}, false
+			}
+		}
+	}
+	return templateCursor{parentNames: parents, start: start, end: end}, true
+}
+
+func templateIndexCursorAt(text string, open, offset int) (templateCursor, bool) {
+	quoteStart := -1
+	escaped := false
+	for i := open + 2; i < offset; i++ {
+		switch {
+		case escaped:
+			escaped = false
+		case text[i] == '\\':
+			escaped = true
+		case text[i] == '"':
+			if quoteStart == -1 {
+				quoteStart = i
+			} else {
+				quoteStart = -1
+			}
+		}
+	}
+	if quoteStart == -1 {
+		return templateCursor{}, false
+	}
+
+	prefix := strings.TrimSpace(text[open+2 : quoteStart])
+	prefix = strings.TrimSpace(strings.TrimPrefix(prefix, "-"))
+	parts := strings.Fields(prefix)
+	if len(parts) != 2 || parts[0] != "index" {
+		return templateCursor{}, false
+	}
+
+	var parents []string
+	switch {
+	case parts[1] == ".vars":
+	case strings.HasPrefix(parts[1], ".vars."):
+		parents = strings.Split(parts[1][len(".vars."):], ".")
+		for _, parent := range parents {
+			if !isTemplateIdentifier(parent) {
+				return templateCursor{}, false
+			}
+		}
+	default:
+		return templateCursor{}, false
+	}
+
+	cursor := templateCursor{
+		parentNames:       parents,
+		start:             quoteStart + 1,
+		end:               offset,
+		isIndexKey:        true,
+		needsClosingQuote: true,
+	}
+	escaped = false
+	for end := offset; end < len(text); end++ {
+		switch {
+		case escaped:
+			escaped = false
+		case text[end] == '\\':
+			escaped = true
+		case text[end] == '"':
+			cursor.end = end
+			cursor.needsClosingQuote = false
+			return cursor, true
+		case text[end] == '\n' || end+1 < len(text) && text[end:end+2] == "}}":
+			cursor.end = end
+			return cursor, true
+		}
+	}
+	cursor.end = len(text)
+	return cursor, true
+}
+
+func isTemplateIdentifier(name string) bool {
+	if name == "" || name[0] >= '0' && name[0] <= '9' {
+		return false
+	}
+	for i := range len(name) {
+		if !isTemplateIdentifierByte(name[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func isTemplateIdentifierByte(value byte) bool {
+	return value == '_' || value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' || value >= '0' && value <= '9'
 }
 
 // HCL requires nested blocks on their own lines. Account for completion just

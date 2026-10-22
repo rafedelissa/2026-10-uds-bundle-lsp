@@ -137,7 +137,7 @@ func handleMessage(ctx context.Context, writer *bufio.Writer, msg message, state
 		documents.completionContentFormat = hoverContentFormat(params.Capabilities.TextDocument.Completion.CompletionItem.DocumentationFormat)
 		result, err := json.Marshal(initializeResult{
 			Capabilities: serverCapabilities{
-				CompletionProvider:        completionOptions{TriggerCharacters: []string{"{", "."}},
+				CompletionProvider:        completionOptions{TriggerCharacters: []string{"{", ".", "\""}},
 				DefinitionProvider:        true,
 				DocumentHighlightProvider: true,
 				HoverProvider:             true,
@@ -210,7 +210,7 @@ func handleMessage(ctx context.Context, writer *bufio.Writer, msg message, state
 		var value any
 		switch msg.Method {
 		case "textDocument/completion":
-			value = documents.complete(params)
+			value = documents.complete(ctx, params)
 		case "textDocument/definition":
 			value = documents.definition(params)
 		case "textDocument/documentHighlight":

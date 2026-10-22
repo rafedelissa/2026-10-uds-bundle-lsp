@@ -42,6 +42,27 @@ func TestBundleDefinitionFields(t *testing.T) {
 	}
 }
 
+func TestConfigDefinitionFields(t *testing.T) {
+	fields := ConfigDefinitionFields()
+
+	options := definitionField(t, fields, "options")
+	assert.Equal(t, "block", options.Type)
+	assert.Equal(t, "string", definitionField(t, options.Fields, "log_level").Type)
+	assert.Equal(t, "number", definitionField(t, options.Fields, "concurrency").Type)
+
+	verification := definitionField(t, fields, "signature_verification")
+	keyless := definitionField(t, verification.Fields, "keyless")
+	assert.Equal(t, "string", definitionField(t, keyless.Fields, "trusted_root").Type)
+	assert.Equal(t, DefinitionField{Name: "variables", Type: "object"}, definitionField(t, fields, "variables"))
+}
+
+func TestDefaultsDefinitionFields(t *testing.T) {
+	assert.Equal(t,
+		[]DefinitionField{{Name: "variables", Type: "object"}},
+		DefaultsDefinitionFields(),
+	)
+}
+
 func definitionField(t *testing.T, fields []DefinitionField, name string) DefinitionField {
 	t.Helper()
 	for _, field := range fields {

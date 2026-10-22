@@ -53,7 +53,7 @@ func TestBundleCompletionContext(t *testing.T) {
 			store.completionSnippetSupport = true
 			uri := "file:///workspace/bundle.uds.hcl"
 			store.documents[uri] = document{URI: uri, Text: text}
-			result := store.complete(documentPositionParams{TextDocument: textDocumentIdentifier{URI: uri}, Position: &pos})
+			result := store.complete(t.Context(), documentPositionParams{TextDocument: textDocumentIdentifier{URI: uri}, Position: &pos})
 			var labels []string
 			for _, item := range result.Items {
 				labels = append(labels, item.Label)
@@ -66,6 +66,76 @@ func TestBundleCompletionContext(t *testing.T) {
 			}
 			for _, name := range tt.exclude {
 				assert.NotContains(t, labels, name)
+			}
+		})
+	}
+}
+
+func TestFileSpecificCompletion(t *testing.T) {
+	tests := []struct {
+		name    string
+		uri     string
+		marked  string
+		want    []string
+		exclude []string
+	}{
+		{
+			name:    "config root",
+			uri:     "file:///workspace/config.uds.hcl",
+			marked:  "|",
+			want:    []string{"options", "signature_verification", "variables"},
+			exclude: []string{"metadata", "package", "locals"},
+		},
+		{
+			name:    "config options",
+			uri:     "file:///workspace/config.uds.hcl",
+			marked:  "options {\n  |\n}\n",
+			want:    []string{"log_level", "architecture", "plain_http", "skip_tls_verify", "tmp_dir", "concurrency"},
+			exclude: []string{"variables", "public_key"},
+		},
+		{
+			name:   "config keyless verification",
+			uri:    "file:///workspace/config.uds.hcl",
+			marked: "signature_verification {\n  keyless {\n    |\n  }\n}\n",
+			want:   []string{"certificate_identity", "certificate_identity_regexp", "certificate_oidc_issuer", "certificate_oidc_issuer_regexp", "trusted_root"},
+		},
+		{
+			name:    "defaults root",
+			uri:     "file:///workspace/defaults.uds.hcl",
+			marked:  "|",
+			want:    []string{"variables"},
+			exclude: []string{"options", "signature_verification", "metadata"},
+		},
+		{
+			name:   "unknown HCL file",
+			uri:    "file:///workspace/other.hcl",
+			marked: "|",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			text, pos := hoverPosition(t, tt.marked)
+			store := newDocumentStore()
+			store.documents[tt.uri] = document{URI: tt.uri, Text: text}
+
+			result := store.complete(t.Context(), documentPositionParams{
+				TextDocument: textDocumentIdentifier{URI: tt.uri},
+				Position:     &pos,
+			})
+
+			labels := make([]string, 0, len(result.Items))
+			for _, item := range result.Items {
+				labels = append(labels, item.Label)
+			}
+			for _, label := range tt.want {
+				assert.Contains(t, labels, label)
+			}
+			for _, label := range tt.exclude {
+				assert.NotContains(t, labels, label)
+			}
+			if len(tt.want) == 0 {
+				assert.Empty(t, labels)
 			}
 		})
 	}
@@ -142,7 +212,7 @@ metadata { name = "local.|" }
 			store := newDocumentStore()
 			store.documents[uri] = document{URI: uri, Text: text}
 
-			result := store.complete(documentPositionParams{
+			result := store.complete(t.Context(), documentPositionParams{
 				TextDocument: textDocumentIdentifier{URI: uri},
 				Position:     &pos,
 			})
@@ -198,7 +268,7 @@ func TestCompletionEdits(t *testing.T) {
 			store.completionSnippetSupport = true
 			uri := "file:///workspace/bundle.uds.hcl"
 			store.documents[uri] = document{URI: uri, Text: text}
-			result := store.complete(documentPositionParams{TextDocument: textDocumentIdentifier{URI: uri}, Position: &pos})
+			result := store.complete(t.Context(), documentPositionParams{TextDocument: textDocumentIdentifier{URI: uri}, Position: &pos})
 			item := completionByLabel(t, result, tt.label)
 			assert.Equal(t, tt.insert, item.TextEdit.NewText)
 			assert.Equal(t, tt.format, item.InsertTextFormat)
