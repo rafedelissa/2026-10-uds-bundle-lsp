@@ -137,10 +137,11 @@ func handleMessage(ctx context.Context, writer *bufio.Writer, msg message, state
 		documents.completionContentFormat = hoverContentFormat(params.Capabilities.TextDocument.Completion.CompletionItem.DocumentationFormat)
 		result, err := json.Marshal(initializeResult{
 			Capabilities: serverCapabilities{
-				CompletionProvider: completionOptions{TriggerCharacters: []string{"{"}},
-				DefinitionProvider: true,
-				HoverProvider:      true,
-				PositionEncoding:   "utf-16",
+				CompletionProvider:        completionOptions{TriggerCharacters: []string{"{"}},
+				DefinitionProvider:        true,
+				DocumentHighlightProvider: true,
+				HoverProvider:             true,
+				PositionEncoding:          "utf-16",
 				TextDocumentSync: textDocumentSyncOptions{
 					OpenClose: true,
 					Change:    1, // TextDocumentSyncKind.Full
@@ -174,7 +175,7 @@ func handleMessage(ctx context.Context, writer *bufio.Writer, msg message, state
 		return handleDocumentNotification(ctx, writer, msg, state, documents, documents.didSave)
 	case "textDocument/didClose":
 		return handleDocumentNotification(ctx, writer, msg, state, documents, documents.didClose)
-	case "textDocument/hover", "textDocument/completion", "textDocument/definition":
+	case "textDocument/hover", "textDocument/completion", "textDocument/definition", "textDocument/documentHighlight":
 		if msg.ID == nil {
 			return false, state, nil
 		}
@@ -191,6 +192,8 @@ func handleMessage(ctx context.Context, writer *bufio.Writer, msg message, state
 			value = documents.complete(params)
 		case "textDocument/definition":
 			value = documents.definition(params)
+		case "textDocument/documentHighlight":
+			value = documents.highlight(params)
 		default:
 			value = documents.hover(params)
 		}

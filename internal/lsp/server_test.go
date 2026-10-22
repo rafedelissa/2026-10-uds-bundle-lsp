@@ -40,6 +40,7 @@ func TestServeLifecycle(t *testing.T) {
 		"capabilities": {
 			"completionProvider": {"resolveProvider": false, "triggerCharacters": ["{"]},
 			"definitionProvider": true,
+			"documentHighlightProvider": true,
 			"hoverProvider": true,
 			"positionEncoding": "utf-16",
 			"textDocumentSync": {"openClose": true, "change": 1, "save": {"includeText": false}}

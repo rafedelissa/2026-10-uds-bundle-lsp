@@ -26,11 +26,11 @@ func (s *documentStore) definition(params documentPositionParams) *location {
 	if !found {
 		return nil
 	}
-	body, pos, ok := definitionContext(doc, *params.Position)
+	body, pos, ok := bundleDocumentContext(doc, *params.Position)
 	if !ok {
 		return nil
 	}
-	namespace, name, ok := definitionReference(body, pos)
+	namespace, name, ok := definitionReference(traversalAtPosition(body, pos))
 	if !ok {
 		return nil
 	}
@@ -41,7 +41,7 @@ func (s *documentStore) definition(params documentPositionParams) *location {
 	return &location{URI: doc.URI, Range: rangeFromHCL(doc.Text, target)}
 }
 
-func definitionContext(doc document, pos position) (*hclsyntax.Body, hcl.Pos, bool) {
+func bundleDocumentContext(doc document, pos position) (*hclsyntax.Body, hcl.Pos, bool) {
 	uri, err := url.Parse(doc.URI)
 	if err != nil || path.Base(uri.Path) != bundle.BundleFileName {
 		return nil, hcl.Pos{}, false
@@ -58,8 +58,7 @@ func definitionContext(doc document, pos position) (*hclsyntax.Body, hcl.Pos, bo
 	return body, hcl.Pos{Byte: offset}, ok
 }
 
-func definitionReference(body *hclsyntax.Body, pos hcl.Pos) (string, string, bool) {
-	traversal := traversalAtPosition(body, pos)
+func definitionReference(traversal hcl.Traversal) (string, string, bool) {
 	if len(traversal) < 2 {
 		return "", "", false
 	}
