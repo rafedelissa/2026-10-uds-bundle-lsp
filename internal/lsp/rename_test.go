@@ -4,7 +4,6 @@
 package lsp
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -27,11 +26,46 @@ package "app" { source = "${local.re|po}/${local.repo}" }
 			wantNewText: []string{"registry", "registry", "registry"},
 		},
 		{
+			name: "local reference at end of name",
+			marked: `locals { repo = "example.com" }
+package "app" { source = "${local.repo|}/${local.repo}" }
+`,
+			wantOldText: []string{"repo", "repo", "repo"},
+			wantNewText: []string{"registry", "registry", "registry"},
+		},
+		{
+			name: "local declaration at end of name",
+			marked: `locals { repo| = "example.com" }
+package "app" { source = local.repo }
+`,
+			wantOldText: []string{"repo", "repo"},
+			wantNewText: []string{"registry", "registry"},
+		},
+		{
+			name: "unicode reference at end of name",
+			marked: `locals { café = "example.com" }
+package "😀app" { source = "${local.café|}" }
+`,
+			wantOldText: []string{"café", "café"},
+			wantNewText: []string{"registry", "registry"},
+		},
+		{
 			name: "package",
 			marked: `package "base" { source = "base" }
 package "app" {
   source = "app"
   depends_on = [package.b|ase]
+}
+`,
+			wantOldText: []string{`"base"`, "base"},
+			wantNewText: []string{`"registry"`, "registry"},
+		},
+		{
+			name: "package reference at end of name",
+			marked: `package "base" { source = "base" }
+package "app" {
+  source = "app"
+  depends_on = [package.base|]
 }
 `,
 			wantOldText: []string{`"base"`, "base"},
@@ -56,13 +90,29 @@ package "app" {
 			edits := result.Changes[uri]
 			oldText := make([]string, 0, len(edits))
 			newText := make([]string, 0, len(edits))
-			lines := strings.Split(text, "\n")
 			for _, edit := range edits {
-				oldText = append(oldText, lines[edit.Range.Start.Line][edit.Range.Start.Character:edit.Range.End.Character])
+				start, ok := byteAtPosition(text, edit.Range.Start)
+				require.True(t, ok)
+				end, ok := byteAtPosition(text, edit.Range.End)
+				require.True(t, ok)
+				oldText = append(oldText, text[start:end])
 				newText = append(newText, edit.NewText)
 			}
 			assert.ElementsMatch(t, tt.wantOldText, oldText)
 			assert.ElementsMatch(t, tt.wantNewText, newText)
 		})
 	}
+}
+
+func TestRenameDoesNotScanPastWhitespace(t *testing.T) {
+	text, pos := hoverPosition(t, `locals { repo = "example.com" }
+package "app" { source = local.repo |}
+`)
+	uri := "file:///workspace/bundle.uds.hcl"
+	store := newDocumentStore()
+	store.documents[uri] = document{URI: uri, Text: text}
+	_, err := store.rename(renameParams{
+		TextDocument: textDocumentIdentifier{URI: uri}, Position: &pos, NewName: "registry",
+	})
+	require.ErrorContains(t, err, "no renameable symbol")
 }

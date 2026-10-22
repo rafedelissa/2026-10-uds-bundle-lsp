@@ -4,6 +4,7 @@
 package lsp
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -45,12 +46,12 @@ func (s *documentStore) rename(params renameParams) (*workspaceEdit, error) {
 	}
 	body, pos, ok := bundleDocumentContext(doc, *params.Position)
 	if !ok {
-		return nil, fmt.Errorf("cannot rename at the requested document position")
+		return nil, errors.New("cannot rename at the requested document position")
 	}
 
 	target, found := findRenameTarget(body, pos)
 	if !found {
-		return nil, fmt.Errorf("no renameable symbol at the requested position")
+		return nil, errors.New("no renameable symbol at the requested position")
 	}
 	if params.NewName != target.name {
 		if _, exists := definitionRange(body, target.namespace, params.NewName); exists {
@@ -78,6 +79,18 @@ func (s *documentStore) rename(params renameParams) (*workspaceEdit, error) {
 }
 
 func findRenameTarget(body *hclsyntax.Body, pos hcl.Pos) (renameTarget, bool) {
+	target, found := renameTargetAtPosition(body, pos)
+	if found || pos.Byte == 0 {
+		return target, found
+	}
+	// HCL ranges exclude their end offset, but an editor caret immediately
+	// after an identifier is also a valid place to invoke rename. Range lookup
+	// uses byte offsets, so the last byte also works for Unicode identifiers.
+	pos.Byte--
+	return renameTargetAtPosition(body, pos)
+}
+
+func renameTargetAtPosition(body *hclsyntax.Body, pos hcl.Pos) (renameTarget, bool) {
 	namespace, name, found := definitionReference(traversalAtPosition(body, pos))
 	if !found {
 		namespace, name, found = declarationAtPosition(body, pos)
