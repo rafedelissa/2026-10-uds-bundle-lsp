@@ -16,6 +16,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestTemplateReferencesVariable(t *testing.T) {
+	tests := []struct {
+		name  string
+		text  string
+		path  []string
+		found bool
+	}{
+		{name: "dot", text: `{{ .vars.features.level }}`, path: []string{"features", "level"}, found: true},
+		{name: "index", text: `{{ index .vars.annotations "app.kubernetes.io/managed-by" }}`, path: []string{"annotations", "app.kubernetes.io/managed-by"}, found: true},
+		{name: "escaped index", text: `{{ index .vars "quote\"key" }}`, path: []string{`quote"key`}, found: true},
+		{name: "empty index", text: `{{ index .vars "" }}`, path: []string{""}, found: true},
+		{name: "alias", text: `{{ $cfg := .vars.features }}{{ $cfg.level }}`, path: []string{"features", "level"}, found: true},
+		{name: "similar name", text: `{{ .vars.featured }}`, path: []string{"features"}},
+		{name: "template string", text: `{{ printf ".vars.features" }}`, path: []string{"features"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.found, templateReferencesVariable(tt.text, tt.path))
+		})
+	}
+}
+
 func TestValuesVariableDefinition(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -43,7 +65,7 @@ func TestValuesVariableDefinition(t *testing.T) {
 		{name: "template string", marked: `{{ printf ".vars.dom|ain" }}`},
 		{name: "template comment", marked: `{{/* .vars.dom|ain */}}`},
 		{name: "namespace", marked: `{{ .va|rs.domain }}`},
-		{name: "missing variable", marked: `{{ .vars.mis|sing }}`},
+		{name: "missing variable", marked: `{{ .vars.|missing }}`},
 		{name: "range element is not root", marked: `{{ range .vars.features }}{{ .vars.dom|ain }}{{ end }}`},
 		{name: "iterator is not collection", marked: `{{ range $key, $item := .vars.features }}{{ $item.le|vel }}{{ end }}`},
 		{name: "with changes dot", marked: `{{ with .vars.features }}{{ .vars.dom|ain }}{{ end }}`},
@@ -71,6 +93,26 @@ func TestValuesVariableDefinition(t *testing.T) {
 	}
 }
 
+func TestValuesVariableDefinitionHidesReplacedDefaultSubtree(t *testing.T) {
+	marked := `{{ .vars.features.le|vel }}`
+	store, uri := newValuesCompletionStore(t, marked)
+	for candidate, doc := range store.documents {
+		if strings.HasSuffix(candidate, bundle.BundleConfigFileName) {
+			doc.Text = `variables = { features = "disabled" }`
+			store.documents[candidate] = doc
+			break
+		}
+	}
+	text, pos := hoverPosition(t, marked)
+	doc := store.documents[uri]
+	doc.Text = text
+	store.documents[uri] = doc
+
+	locations := store.definition(t.Context(), documentPositionParams{TextDocument: textDocumentIdentifier{URI: uri}, Position: &pos})
+
+	assert.Empty(t, locations)
+}
+
 func TestValuesVariableDefinitionArchitecture(t *testing.T) {
 	store, dir, bundleURI, _ := newDiagnosticWorkspace(t)
 	doc := store.documents[bundleURI]
@@ -96,11 +138,11 @@ func TestValuesFileDefinition(t *testing.T) {
 		want       []string
 	}{
 		{name: "relative", markedList: `["values/app.y|aml"]`, want: []string{"values/app.yaml"}},
-		{name: "second item", markedList: `["values/app.yaml", "values/sec|ond.yaml"]`, want: []string{"values/second.yaml"}},
+		{name: "second item", markedList: `["values/app.yaml", "values/|second.yaml"]`, want: []string{"values/second.yaml"}},
 		{name: "architecture", markedList: `["values/arch-${sys.arch}.y|aml"]`, want: []string{"values/arch-test-arch.yaml"}},
 		{name: "computed list", markedList: `true ? ["values/app.y|aml", "values/second.yaml"] : []`, want: []string{"values/app.yaml", "values/second.yaml"}},
 		{name: "missing", markedList: `["values/mis|sing.yaml"]`},
-		{name: "directory", markedList: `["val|ues"]`},
+		{name: "directory", markedList: `["|values"]`},
 		{name: "list separator", markedList: `["values/app.yaml"|, "values/second.yaml"]`},
 	}
 	for _, tt := range tests {
@@ -205,6 +247,26 @@ func TestComputedVariableDefinition(t *testing.T) {
 	locations := store.definition(t.Context(), documentPositionParams{TextDocument: textDocumentIdentifier{URI: uri}, Position: &pos})
 	require.Len(t, locations, 2)
 	assert.Equal(t, `true ? { level = "debug" } : { level = "info" }`, definitionSelection(t, store, locations[0]))
+
+	text, pos = hoverPosition(t, `{{ .vars.features.audit_|logs }}`)
+	values := store.documents[uri]
+	values.Text = text
+	store.documents[uri] = values
+	locations = store.definition(t.Context(), documentPositionParams{TextDocument: textDocumentIdentifier{URI: uri}, Position: &pos})
+	require.Len(t, locations, 1, "computed objects must preserve unmatched defaults")
+	filename, ok = fileURIPath(locations[0].URI)
+	require.True(t, ok)
+	assert.Equal(t, bundle.BundleDefaultsFileName, filepath.Base(filename))
+
+	text, pos = hoverPosition(t, `{{ .vars.features.le|vel }}`)
+	values = store.documents[uri]
+	values.Text = text
+	store.documents[uri] = values
+	config := store.documents[configURI]
+	config.Text = `variables = { features = file("features.txt") }`
+	store.documents[configURI] = config
+	locations = store.definition(t.Context(), documentPositionParams{TextDocument: textDocumentIdentifier{URI: uri}, Position: &pos})
+	assert.Empty(t, locations, "file() returns a scalar that replaces the defaults subtree")
 }
 
 func TestServeMultipleDefinitions(t *testing.T) {

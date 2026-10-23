@@ -3,6 +3,8 @@ package lsp
 import (
 	"maps"
 	"slices"
+	"strconv"
+	"strings"
 	"text/template"
 	"text/template/parse"
 )
@@ -20,12 +22,53 @@ func templateVariableAt(text string, offset int) []string {
 	if err != nil {
 		return nil
 	}
+	return templateVariableAtTree(tmpl, offset)
+}
+
+func templateVariableAtTree(tmpl *template.Template, offset int) []string {
 	scope := templateDefinitionScope{dot: []string{}, variables: map[string][]string{"$": {}}}
 	names := templateListReference(tmpl.Root, offset, scope)
 	if len(names) < 2 || names[0] != "vars" {
 		return nil
 	}
 	return names[1:]
+}
+
+func templateReferencesVariable(text string, names []string) bool {
+	if len(names) == 0 {
+		return false
+	}
+	tmpl, err := template.New("values").Parse(text)
+	if err != nil {
+		return false
+	}
+	leaf := names[len(names)-1]
+	if leaf == "" {
+		for offset := range len(text) {
+			if slices.Equal(templateVariableAtTree(tmpl, offset), names) {
+				return true
+			}
+		}
+		return false
+	}
+	needles := []string{leaf}
+	if quoted := strconv.Quote(leaf); quoted[1:len(quoted)-1] != leaf {
+		needles = append(needles, quoted[1:len(quoted)-1])
+	}
+	for _, needle := range needles {
+		for start := 0; start < len(text); {
+			index := strings.Index(text[start:], needle)
+			if index < 0 {
+				break
+			}
+			offset := start + index
+			if slices.Equal(templateVariableAtTree(tmpl, offset), names) {
+				return true
+			}
+			start = offset + len(needle)
+		}
+	}
+	return false
 }
 
 func templateListReference(list *parse.ListNode, offset int, scope templateDefinitionScope) []string {
@@ -123,6 +166,11 @@ func bindTemplateVariables(pipe *parse.PipeNode, scope templateDefinitionScope, 
 
 func templateNodeReference(node parse.Node, offset int, scope templateDefinitionScope) []string {
 	switch node := node.(type) {
+	case *parse.DotNode:
+		start := int(node.Pos)
+		if scope.dot != nil && offset >= start && offset <= start+1 {
+			return slices.Clone(scope.dot)
+		}
 	case *parse.FieldNode:
 		start := int(node.Pos)
 		// The template parser folds chained fields into one node, retaining

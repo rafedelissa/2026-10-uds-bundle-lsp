@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/zclconf/go-cty/cty"
+	"github.com/zclconf/go-cty/cty/function"
 )
 
 func (s *documentStore) valuesFileDefinitions(ctx context.Context, doc document, body *hclsyntax.Body, pos hcl.Pos) []location {
@@ -107,13 +108,18 @@ func (s *documentStore) valuesVariableDefinitions(ctx context.Context, doc docum
 		if parsed == nil || !referencesValuesFile(parsed, bundlePath, filename) {
 			continue
 		}
-		for _, name := range []string{bundle.BundleConfigFileName, bundle.BundleDefaultsFileName} {
-			varsDoc, err := s.sourceDocument(filepath.Join(dir, name))
-			if err != nil {
-				continue
+		config, configErr := s.sourceDocument(filepath.Join(dir, bundle.BundleConfigFileName))
+		if configErr == nil {
+			if target, found := variableDefinitionRange(config, names); found {
+				result = appendDefinition(result, location{URI: config.URI, Range: rangeFromHCL(config.Text, target)})
+			} else if variableAncestorOverrides(config, names) {
+				continue // A config ancestor replaces this complete defaults subtree.
 			}
-			if target, ok := variableDefinitionRange(varsDoc, names); ok {
-				result = appendDefinition(result, location{URI: varsDoc.URI, Range: rangeFromHCL(varsDoc.Text, target)})
+		}
+		defaults, err := s.sourceDocument(filepath.Join(dir, bundle.BundleDefaultsFileName))
+		if err == nil {
+			if target, ok := variableDefinitionRange(defaults, names); ok {
+				result = appendDefinition(result, location{URI: defaults.URI, Range: rangeFromHCL(defaults.Text, target)})
 			}
 		}
 	}
@@ -125,6 +131,83 @@ func appendDefinition(locations []location, target location) []location {
 		return locations
 	}
 	return append(locations, target)
+}
+
+func variableAncestorOverrides(doc document, names []string) bool {
+	if len(names) == 0 {
+		return false
+	}
+	file, _ := hclsyntax.ParseConfig([]byte(doc.Text), doc.URI, hcl.InitialPos)
+	if file == nil {
+		return false
+	}
+	body, ok := file.Body.(*hclsyntax.Body)
+	if !ok || body.Attributes["variables"] == nil {
+		return false
+	}
+	return objectAncestorOverrides(body.Attributes["variables"].Expr, names)
+}
+
+// variableTypeEvalContext classifies file() as a string without reading from disk.
+var variableTypeEvalContext = &hcl.EvalContext{Functions: map[string]function.Function{
+	"file": function.New(&function.Spec{
+		Params: []function.Parameter{{Name: "path", Type: cty.String}},
+		Type:   function.StaticReturnType(cty.String),
+		Impl: func(_ []cty.Value, _ cty.Type) (cty.Value, error) {
+			return cty.UnknownVal(cty.String), nil
+		},
+	}),
+}}
+
+func objectAncestorOverrides(expr hcl.Expression, names []string) bool {
+	items, diagnostics := hcl.ExprMap(expr)
+	if diagnostics.HasErrors() {
+		value, ok := typedExpressionValue(expr)
+		return ok && objectValueAncestorOverrides(value, names)
+	}
+	for _, item := range items {
+		key, diagnostics := item.Key.Value(nil)
+		if diagnostics.HasErrors() || !key.IsKnown() || key.IsNull() || key.Type() != cty.String || key.AsString() != names[0] {
+			continue
+		}
+		if len(names) == 1 {
+			return false
+		}
+		if _, diagnostics := hcl.ExprMap(item.Value); diagnostics.HasErrors() {
+			value, ok := typedExpressionValue(item.Value)
+			if !ok {
+				return false
+			}
+			if value.Type().IsObjectType() {
+				return objectValueAncestorOverrides(value, names[1:])
+			}
+			return true // A known non-object ancestor replaces the complete default subtree.
+		}
+		return objectAncestorOverrides(item.Value, names[1:])
+	}
+	return false
+}
+
+func typedExpressionValue(expr hcl.Expression) (cty.Value, bool) {
+	value, diagnostics := expr.Value(variableTypeEvalContext)
+	return value, !diagnostics.HasErrors() && !value.IsNull() && value.Type() != cty.DynamicPseudoType
+}
+
+func objectValueAncestorOverrides(value cty.Value, names []string) bool {
+	if !value.Type().IsObjectType() || !value.Type().HasAttribute(names[0]) {
+		return false
+	}
+	if len(names) == 1 {
+		return false
+	}
+	child := value.GetAttr(names[0])
+	if child.IsNull() || child.Type() == cty.DynamicPseudoType {
+		return false
+	}
+	if !child.Type().IsObjectType() {
+		return true
+	}
+	return objectValueAncestorOverrides(child, names[1:])
 }
 
 func variableDefinitionRange(doc document, names []string) (hcl.Range, bool) {
@@ -154,11 +237,11 @@ func objectDefinitionRange(expr hcl.Expression, names []string) (hcl.Range, bool
 		}
 		return hcl.Range{}, false
 	}
-	// Computed objects have no literal key range. If a constant expression
-	// supplies the requested path, navigate to that defining expression.
-	value, diags := expr.Value(nil)
+	// Computed objects have no literal key range. If the expression's static
+	// type supplies the requested path, navigate to the complete expression.
+	value, ok := typedExpressionValue(expr)
 	for _, name := range names {
-		if diags.HasErrors() || !value.IsKnown() || value.IsNull() || !value.Type().IsObjectType() || !value.Type().HasAttribute(name) {
+		if !ok || value.IsNull() || !value.Type().IsObjectType() || !value.Type().HasAttribute(name) {
 			return hcl.Range{}, false
 		}
 		value = value.GetAttr(name)

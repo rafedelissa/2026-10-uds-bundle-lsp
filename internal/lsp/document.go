@@ -32,6 +32,8 @@ type documentStore struct {
 	watchRegistrationSent    bool
 	workspaceFolders         map[string]workspaceFolder
 	workspaceFiles           map[string]struct{}
+	valuesFilesByBundle      map[string][]string
+	variableReferenceCache   map[string][]string
 }
 
 // textDocumentItem describes a document when it is opened by the client.
@@ -90,7 +92,11 @@ type didCloseTextDocumentParams struct {
 }
 
 func newDocumentStore() *documentStore {
-	return &documentStore{documents: make(map[string]document)}
+	return &documentStore{
+		documents:              make(map[string]document),
+		valuesFilesByBundle:    make(map[string][]string),
+		variableReferenceCache: make(map[string][]string),
+	}
 }
 
 // didOpen records a document when the client opens it.

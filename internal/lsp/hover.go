@@ -1,6 +1,8 @@
 package lsp
 
 import (
+	"context"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -25,21 +27,21 @@ type hoverResult struct {
 	Range    documentRange `json:"range"`
 }
 
-func (s *documentStore) hover(params documentPositionParams) *hoverResult {
+// hover returns schema details for UDS HCL and cross-file definitions for values variables.
+func (s *documentStore) hover(ctx context.Context, params documentPositionParams) *hoverResult {
 	doc, found := s.document(params.TextDocument.URI)
 	if !found {
-		return nil
-	}
-	definitionFields, _ := definitionFieldsForDocument(doc.URI)
-	if definitionFields == nil {
 		return nil
 	}
 	offset, ok := byteAtPosition(doc.Text, *params.Position)
 	if !ok {
 		return nil
 	}
-	// Syntax alone supplies field locations, even when semantic validation fails.
-	// Hover never evaluates expressions or file() calls.
+	definitionFields, _ := definitionFieldsForDocument(doc.URI)
+	if definitionFields == nil {
+		return s.valuesVariableHover(ctx, doc, *params.Position, offset)
+	}
+	// Syntax alone supplies structural field locations, even when semantic validation fails.
 	file, _ := hclsyntax.ParseConfig([]byte(doc.Text), doc.URI, hcl.InitialPos)
 	if file == nil {
 		return nil
@@ -48,7 +50,11 @@ func (s *documentStore) hover(params documentPositionParams) *hoverResult {
 	if !ok {
 		return nil
 	}
-	field, sourceRange := definitionFieldAtPos(body, definitionFields, hcl.Pos{Byte: offset})
+	pos := hcl.Pos{Byte: offset}
+	if result := s.hclExpressionHover(ctx, doc, body, pos); result != nil {
+		return result
+	}
+	field, sourceRange := definitionFieldAtPos(body, definitionFields, pos)
 	if field == nil {
 		return nil
 	}
@@ -57,6 +63,148 @@ func (s *documentStore) hover(params documentPositionParams) *hoverResult {
 		Contents: markupContent{Kind: format, Value: fieldHoverText(*field, format)},
 		Range:    rangeFromHCL(doc.Text, sourceRange),
 	}
+}
+
+func (s *documentStore) valuesVariableHover(ctx context.Context, doc document, pos position, offset int) *hoverResult {
+	names := templateVariableAt(doc.Text, offset)
+	if len(names) == 0 {
+		return nil
+	}
+	definitions := s.valuesVariableDefinitions(ctx, doc, pos)
+	if len(definitions) == 0 {
+		return nil
+	}
+
+	path := templateVariableDisplay(names)
+	format := hoverContentFormat([]string{s.hoverContentFormat})
+	var text strings.Builder
+	if format == "markdown" {
+		text.WriteString("**" + markdownCodeSpan(path) + "**\n\nDefined in:")
+	} else {
+		text.WriteString(path + "\n\nDefined in:")
+	}
+	hasConfig, hasDefaults := false, false
+	for _, definition := range definitions {
+		name := variableDefinitionName(definition.URI)
+		hasConfig = hasConfig || name == bundle.BundleConfigFileName
+		hasDefaults = hasDefaults || name == bundle.BundleDefaultsFileName
+		if format == "markdown" {
+			text.WriteString("\n- " + markdownCodeSpan(name))
+		} else {
+			text.WriteString("\n- " + name)
+		}
+	}
+	if hasConfig && hasDefaults {
+		text.WriteString("\n\nConfig overrides the default value.")
+	}
+	return &hoverResult{
+		Contents: markupContent{Kind: format, Value: text.String()},
+		Range:    templateVariableHoverRange(doc.Text, offset, names[len(names)-1]),
+	}
+}
+
+func templateVariableDisplay(names []string) string {
+	var result strings.Builder
+	result.WriteString(".vars")
+	for i, name := range names {
+		if isTemplateIdentifier(name) {
+			result.WriteString("." + name)
+			continue
+		}
+		arguments := make([]string, 0, len(names)-i)
+		for _, indexedName := range names[i:] {
+			arguments = append(arguments, strconv.Quote(indexedName))
+		}
+		return "index " + result.String() + " " + strings.Join(arguments, " ")
+	}
+	return result.String()
+}
+
+func markdownBacktickFence(value string, minimum int) string {
+	length := minimum
+	for strings.Contains(value, strings.Repeat("`", length)) {
+		length++
+	}
+	return strings.Repeat("`", length)
+}
+
+func markdownCodeSpan(value string) string {
+	fence := markdownBacktickFence(value, 1)
+	padding := ""
+	if strings.HasPrefix(value, " ") || strings.HasSuffix(value, " ") || strings.HasPrefix(value, "`") || strings.HasSuffix(value, "`") {
+		padding = " "
+	}
+	return fence + padding + value + padding + fence
+}
+
+func variableDefinitionName(uri string) string {
+	if filename, ok := fileURIPath(uri); ok {
+		return filepath.Base(filename)
+	}
+	return uri
+}
+
+func templateVariableHoverRange(text string, offset int, name string) documentRange {
+	if quoted, ok := templateQuotedHoverRange(text, offset); ok {
+		return quoted
+	}
+	if offset < len(text) && text[offset] == '.' {
+		return documentRange{Start: positionAtByte(text, offset), End: positionAtByte(text, offset+1)}
+	}
+	if offset > 0 && text[offset-1] == '.' && !isTemplateIdentifierAt(text, offset) {
+		return documentRange{Start: positionAtByte(text, offset-1), End: positionAtByte(text, offset)}
+	}
+	if offset < len(text) && text[offset] == '$' {
+		_, end := templateIdentifierBounds(text, offset+1)
+		return documentRange{Start: positionAtByte(text, offset), End: positionAtByte(text, end)}
+	}
+	start, end := templateIdentifierBounds(text, min(offset, len(text)))
+	if start > 0 && text[start-1] == '$' {
+		start--
+		return documentRange{Start: positionAtByte(text, start), End: positionAtByte(text, end)}
+	}
+	startMin := max(0, offset-len(name))
+	startMax := min(offset, len(text)-len(name))
+	for start = startMax; start >= startMin; start-- {
+		if text[start:start+len(name)] == name && offset <= start+len(name) {
+			return documentRange{Start: positionAtByte(text, start), End: positionAtByte(text, start+len(name))}
+		}
+	}
+	pos := positionAtByte(text, offset)
+	return documentRange{Start: pos, End: pos}
+}
+
+func templateQuotedHoverRange(text string, offset int) (documentRange, bool) {
+	end := min(offset+1, len(text))
+	open := strings.LastIndex(text[:end], "{{")
+	if open < 0 {
+		return documentRange{}, false
+	}
+	quoteStart := -1
+	var quote byte
+	escaped := false
+	for i := open + 2; i < len(text); i++ {
+		switch {
+		case escaped:
+			escaped = false
+		case quote == '"' && text[i] == '\\':
+			escaped = true
+		case quoteStart < 0 && (text[i] == '"' || text[i] == '`'):
+			quoteStart, quote = i, text[i]
+		case quoteStart >= 0 && text[i] == quote:
+			if offset >= quoteStart && offset <= i {
+				start, end := quoteStart+1, i
+				if start == end {
+					start, end = quoteStart, i+1
+				}
+				return documentRange{Start: positionAtByte(text, start), End: positionAtByte(text, end)}, true
+			}
+			quoteStart, quote = -1, 0
+		case i > offset && quoteStart < 0:
+			return documentRange{}, false
+		}
+	}
+	return documentRange{}, false
 }
 
 func definitionFieldAtPos(body *hclsyntax.Body, fields []bundle.DefinitionField, pos hcl.Pos) (*bundle.DefinitionField, hcl.Range) {
@@ -106,7 +254,7 @@ func fieldHoverText(field bundle.DefinitionField, format string) string {
 	}
 	kind := field.Type
 	if field.Repeated {
-		kind += " (repeatable)"
+		kind = field.Type + " (repeatable)"
 	}
 	required := "no"
 	if field.Required {
@@ -114,6 +262,8 @@ func fieldHoverText(field bundle.DefinitionField, format string) string {
 	}
 	var text strings.Builder
 	text.WriteString(heading.String() + "\n\nType: " + kind + "\n\nRequired by parser: " + required)
+	text.WriteString(fieldValueVariantsText(field, format))
+	text.WriteString(fieldDetailsText(field, format))
 	if len(field.Fields) > 0 {
 		text.WriteString("\n\nFields:")
 		for _, child := range field.Fields {
@@ -144,7 +294,7 @@ func markdownFieldHover(field bundle.DefinitionField, heading string) string {
 		case strings.HasPrefix(field.Type, "list("):
 			example = "[]"
 		}
-		return "```hcl\n" + field.Name + " = " + example + "\n```\n\n**" + requirement + "** · Type: `" + field.Type + "` · *Parser schema*"
+		return "```hcl\n" + field.Name + " = " + example + "\n```\n\n**" + requirement + "** · Type: `" + field.Type + "` · *Parser schema*" + fieldValueVariantsText(field, "markdown") + fieldDetailsText(field, "markdown")
 	}
 
 	kind := "block"
@@ -153,6 +303,7 @@ func markdownFieldHover(field bundle.DefinitionField, heading string) string {
 	}
 	var text strings.Builder
 	text.WriteString("**`" + heading + "`**\n\n*Parser schema · " + kind + " · " + strings.ToLower(requirement) + "*")
+	text.WriteString(fieldDetailsText(field, "markdown"))
 	if len(field.Fields) > 0 {
 		text.WriteString("\n\n| Field | Type | Required |\n| --- | --- | --- |")
 		for _, child := range field.Fields {
@@ -162,6 +313,70 @@ func markdownFieldHover(field bundle.DefinitionField, heading string) string {
 			}
 			text.WriteString("\n| `" + child.Name + "` | `" + child.Type + "` | " + required + " |")
 		}
+	}
+	return text.String()
+}
+
+func fieldValueVariantsText(field bundle.DefinitionField, format string) string {
+	values := fieldSupportedStringValues(field)
+	if field.Type == "bool" {
+		values = []string{"false", "true"}
+	}
+	if len(values) == 0 {
+		return ""
+	}
+	if format == "markdown" {
+		return "\n\nSupported values: `" + strings.Join(values, "`, `") + "`"
+	}
+	return "\n\nSupported values: " + strings.Join(values, ", ")
+}
+
+type fieldHoverDetails struct {
+	description  string
+	defaultValue string
+	constraint   string
+}
+
+var fieldHoverDetailsByName = map[string]fieldHoverDetails{
+	"bundle_api_version":     {description: "Selects the UDS bundle schema version."},
+	"source":                 {description: "References a local Zarf package archive or an OCI package."},
+	"namespace":              {description: "Overrides the package deployment namespace."},
+	"depends_on":             {description: "Orders this package after the referenced packages."},
+	"values_files":           {description: "Applies YAML values files in list order."},
+	"optional_components":    {description: "Selects optional Zarf package components."},
+	"options":                {description: "Configures shared UDS CLI behavior."},
+	"log_level":              {description: "Controls UDS CLI logging verbosity.", defaultValue: "info"},
+	"architecture":           {description: "Selects the target package architecture.", defaultValue: "host architecture"},
+	"plain_http":             {description: "Allows plain HTTP for registry operations.", defaultValue: "false"},
+	"skip_tls_verify":        {description: "Disables registry TLS certificate verification.", defaultValue: "false"},
+	"tmp_dir":                {description: "Selects the directory for temporary files.", defaultValue: "system temporary directory", constraint: "Must name an existing directory when set."},
+	"concurrency":            {description: "Limits concurrent registry operations.", defaultValue: "10", constraint: "Zero uses the default; otherwise the value must be between 1 and 25."},
+	"variables":              {description: "Defines values available to templates through .vars."},
+	"signature_verification": {description: "Configures the signature verification policy."},
+	"verify":                 {description: "Enables package signature verification.", defaultValue: "true", constraint: "When false, public_key and keyless must be omitted."},
+	"public_key":             {description: "Contains the public key used for signature verification. Use file() to load it from disk.", constraint: "Choose exactly one of public_key or keyless when verification is enabled."},
+	"keyless":                {description: "Verifies signatures with certificate identity and OIDC issuer constraints.", constraint: "Choose exactly one identity field and one issuer field."},
+	"trusted_root":           {description: "Contains Sigstore trusted-root JSON. Use file() to load it from disk."},
+	"insecure_ignore_tlog":   {description: "Skips transparency-log verification.", defaultValue: "false"},
+	"insecure_ignore_sct":    {description: "Skips signed-certificate-timestamp verification.", defaultValue: "false"},
+	"use_signed_timestamps":  {description: "Requires signed timestamps during keyless verification.", defaultValue: "false"},
+}
+
+func fieldDetailsText(field bundle.DefinitionField, format string) string {
+	detail := fieldHoverDetailsByName[field.Name]
+	var text strings.Builder
+	if detail.description != "" {
+		text.WriteString("\n\n" + detail.description)
+	}
+	if detail.defaultValue != "" {
+		if format == "markdown" {
+			text.WriteString("\n\nDefault: `" + detail.defaultValue + "`")
+		} else {
+			text.WriteString("\n\nDefault: " + detail.defaultValue)
+		}
+	}
+	if detail.constraint != "" {
+		text.WriteString("\n\n" + detail.constraint)
 	}
 	return text.String()
 }

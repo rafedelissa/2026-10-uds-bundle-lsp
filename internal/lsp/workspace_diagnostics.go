@@ -55,6 +55,8 @@ func (s *documentStore) refreshDiagnostics(ctx context.Context, writer *bufio.Wr
 
 func (s *documentStore) workspaceDiagnostics(ctx context.Context) map[string][]diagnostic {
 	results := make(map[string][]diagnostic)
+	s.valuesFilesByBundle = make(map[string][]string)
+	s.variableReferenceCache = make(map[string][]string)
 	defer s.relativizeDiagnosticMessages(results)
 	for _, filename := range slices.Sorted(maps.Keys(s.workspaceFiles)) {
 		if ctx.Err() != nil {
@@ -190,6 +192,7 @@ func (s *documentStore) validateBundleAssets(ctx context.Context, doc document, 
 	if parsed == nil || !local {
 		return
 	}
+	s.valuesFilesByBundle[filename] = nil
 	for _, pkg := range parsed.Packages {
 		for i, valuesFile := range pkg.ValuesFiles {
 			if ctx.Err() != nil {
@@ -198,6 +201,9 @@ func (s *documentStore) validateBundleAssets(ctx context.Context, doc document, 
 			resolved := valuesFile
 			if !filepath.IsAbs(resolved) {
 				resolved = filepath.Join(filepath.Dir(filename), resolved)
+			}
+			if !slices.Contains(s.valuesFilesByBundle[filename], resolved) {
+				s.valuesFilesByBundle[filename] = append(s.valuesFilesByBundle[filename], resolved)
 			}
 			r := valuesFileRange(doc, pkg.Name, i)
 			valuesDoc, err := s.sourceDocument(resolved)
