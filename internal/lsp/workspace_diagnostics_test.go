@@ -149,6 +149,29 @@ func TestWorkspaceValuesFilePaths(t *testing.T) {
 	assert.Empty(t, results[bufferURI])
 }
 
+func TestWorkspaceDiagnosticPathsAreRelative(t *testing.T) {
+	root := t.TempDir()
+	nested := filepath.Join(root, "nested")
+	store := newDocumentStore()
+	store.workspaceFolders = map[string]workspaceFolder{
+		root:   {URI: valuesFileURI(root)},
+		nested: {URI: valuesFileURI(nested)},
+	}
+	filename := filepath.Join(nested, "bundle.uds.hcl")
+	outside := filepath.Join(t.TempDir(), "external.yaml")
+	results := map[string][]diagnostic{"file:///diagnostic": {{
+		Message: fmt.Sprintf("read %q; bundle %s; external %q", filename, localFileURI(filename), outside),
+	}}}
+
+	store.relativizeDiagnosticMessages(results)
+
+	message := results["file:///diagnostic"][0].Message
+	assert.Contains(t, message, `read "bundle.uds.hcl"`)
+	assert.Contains(t, message, "bundle bundle.uds.hcl")
+	assert.Contains(t, message, outside)
+	assert.NotContains(t, message, root)
+}
+
 func TestWorkspaceSharedValuesAndReferenceRemoval(t *testing.T) {
 	store, dir, bundleURI, valuesURI := newDiagnosticWorkspace(t)
 	values := store.documents[valuesURI]

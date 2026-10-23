@@ -11,6 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/defenseunicorns/uds-cli/internal/bundle"
 	"github.com/defenseunicorns/uds-cli/pkg/iostreams"
@@ -54,6 +55,7 @@ func (s *documentStore) refreshDiagnostics(ctx context.Context, writer *bufio.Wr
 
 func (s *documentStore) workspaceDiagnostics(ctx context.Context) map[string][]diagnostic {
 	results := make(map[string][]diagnostic)
+	defer s.relativizeDiagnosticMessages(results)
 	for _, filename := range slices.Sorted(maps.Keys(s.workspaceFiles)) {
 		if ctx.Err() != nil {
 			return results
@@ -77,6 +79,25 @@ func (s *documentStore) workspaceDiagnostics(ctx context.Context) map[string][]d
 		s.validateBundleAssets(ctx, doc, results)
 	}
 	return results
+}
+
+func (s *documentStore) relativizeDiagnosticMessages(results map[string][]diagnostic) {
+	prefixes := make([]string, 0, len(s.workspaceFolders)*3)
+	for root, folder := range s.workspaceFolders {
+		root = filepath.Clean(root)
+		prefixes = append(prefixes, root+string(filepath.Separator), filepath.ToSlash(root)+"/")
+		if folder.URI != "" {
+			prefixes = append(prefixes, strings.TrimSuffix(folder.URI, "/")+"/")
+		}
+	}
+	slices.SortFunc(prefixes, func(a, b string) int { return len(b) - len(a) })
+	for _, diagnostics := range results {
+		for i := range diagnostics {
+			for _, prefix := range prefixes {
+				diagnostics[i].Message = strings.ReplaceAll(diagnostics[i].Message, prefix, "")
+			}
+		}
+	}
 }
 
 func (s *documentStore) diagnosticBundles(ctx context.Context) []document {
