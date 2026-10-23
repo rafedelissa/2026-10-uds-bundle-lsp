@@ -111,8 +111,8 @@ uds run build-vscode-extension
 ```
 
 This installs locked npm dependencies, runs client unit tests, checks types and
-lint, bundles the client, cross-compiles a server for the current host target,
-and creates `build/uds-lsp-extension-<target>.vsix`. The target is one of the
+lint, bundles the client, cross-compiles a standalone server for the current
+host target, and creates `build/uds-lsp-extension-<target>.vsix`. The target is one of the
 values in the installation table above. Each package includes only its matching
 server, the bundled client, the manifest, the README, the changelog, and the
 repository license.
@@ -137,6 +137,40 @@ uds run build-vscode-extension-all
 ```
 
 Build Unix distributables on macOS or Linux to preserve executable permissions
-in the VSIX. Go cross-compilation uses `CGO_ENABLED=0`. Packaging uses a separate
-temporary directory per target and preserves the local `build/uds-lsp` used by
-F5. Packaging runs locally and does not publish to the Marketplace.
+in the VSIX. Go cross-compilation uses `CGO_ENABLED=0`. The packager shares
+[`hack/build-lsp.mjs`](../hack/build-lsp.mjs) with the standalone LSP tasks and
+retains each server in `build/` before copying it into a temporary VSIX staging
+directory. For example, `darwin-x64` sets `GOOS=darwin` and `GOARCH=amd64`, writes
+`build/uds-lsp-darwin-amd64`, and copies that exact file to `bin/uds-lsp` in the
+VSIX. Windows binaries use the `.exe` suffix.
+
+To build standalone LSP binaries without packaging the client or installing
+npm dependencies, run either of these tasks from the repository root:
+
+```console
+uds run build-lsp-all
+UDS_LSP_TARGET=darwin-arm64 uds run build-lsp-target
+```
+
+The all-target task produces these standalone files:
+
+```text
+build/uds-lsp-darwin-arm64
+build/uds-lsp-darwin-amd64
+build/uds-lsp-linux-arm64
+build/uds-lsp-linux-amd64
+build/uds-lsp-windows-arm64.exe
+build/uds-lsp-windows-amd64.exe
+build/lsp-checksums.txt
+```
+
+The checksum file covers the available standalone variants and is refreshed
+by standalone builds and VSIX packaging. From the repository root, verify it
+with `sha256sum -c build/lsp-checksums.txt`. Consumers of other editors can
+configure their LSP client to launch the matching standalone executable over
+stdin/stdout. Distribute the repository license with these binaries.
+
+`uds run build-all` builds the existing CLI variants and all six standalone
+LSP variants, with combined hashes in `build/checksums.txt`. Packaging and
+standalone release builds preserve the local `build/uds-lsp` used by F5. These
+tasks run locally and do not publish artifacts.

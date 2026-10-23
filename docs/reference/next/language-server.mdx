@@ -7,6 +7,35 @@ sidebar:
 
 The `uds-lsp` executable provides editor diagnostics, navigation, and formatting for Next bundle source files over standard input and output. Configure your editor's LSP client to launch `uds-lsp` and synchronize the bundle HCL files and referenced YAML values files.
 
+## Executable artifacts
+
+The VS Code extension includes a server matching its target platform. Other
+editors can launch a standalone executable built for their host platform:
+
+| Platform | Standalone artifact |
+| --- | --- |
+| macOS, Apple silicon | `build/uds-lsp-darwin-arm64` |
+| macOS, Intel | `build/uds-lsp-darwin-amd64` |
+| Linux, ARM64 | `build/uds-lsp-linux-arm64` |
+| Linux, x86-64 | `build/uds-lsp-linux-amd64` |
+| Windows, ARM64 | `build/uds-lsp-windows-arm64.exe` |
+| Windows, x86-64 | `build/uds-lsp-windows-amd64.exe` |
+
+From a source checkout with the repository's mise-managed development tools
+installed and activated, run `uds run build-lsp-all` at the repository root to
+create all six artifacts. The builder selects `GOOS` and `GOARCH` for each
+target and disables CGO. Consumers of the compiled executables need no Go
+toolchain. Distribute the repository license alongside standalone binaries.
+
+Each build updates `build/lsp-checksums.txt` for the available standalone
+variants. Verify it from the repository root with
+`sha256sum -c build/lsp-checksums.txt`. VSIX packaging builds and embeds the
+same standalone files, which remain available in `build/` for distribution.
+
+For local development, `uds run build-lsp` produces `build/uds-lsp`
+(`build/uds-lsp.exe` on Windows). The development executable is separate from
+the platform-named distribution artifacts.
+
 ## Go to definition
 
 Invoke your editor's **Go to Definition** action on a reference:

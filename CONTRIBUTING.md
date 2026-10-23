@@ -106,6 +106,9 @@ Use these root tasks for verification and distribution:
 | Task | Result |
 | --- | --- |
 | `uds run build-lsp` | Local development server in `build/`. |
+| `uds run build-lsp-target` | Standalone distributable LSP for the current host, or `UDS_LSP_TARGET`. |
+| `uds run build-lsp-all` | All six standalone LSP binaries and `build/lsp-checksums.txt`. |
+| `uds run build-all` | Existing CLI binaries plus all six LSP binaries, listed together in `build/checksums.txt`. |
 | `uds run test-vscode-extension` | Locked dependency installation, type checks, lint, and client unit tests. |
 | `uds run build-vscode-extension` | Client checks and a VSIX with its bundled server for the current host. |
 | `uds run build-vscode-extension-all` | A VSIX for each macOS, Linux, and Windows target on x64 and arm64. |
@@ -118,13 +121,39 @@ single cross-compilation target:
 UDS_VSCODE_TARGET=darwin-arm64 uds run build-vscode-extension
 ```
 
+The extension packager and standalone tasks share
+[`hack/build-lsp.mjs`](hack/build-lsp.mjs). It sets `CGO_ENABLED=0`, selects
+`GOOS` and `GOARCH` from this target table, and builds `./cmd/uds-lsp` with
+`-trimpath` and stripped debug information:
+
+| Target selector | GOOS | GOARCH | Standalone output in `build/` |
+| --- | --- | --- | --- |
+| `darwin-arm64` | `darwin` | `arm64` | `uds-lsp-darwin-arm64` |
+| `darwin-x64` | `darwin` | `amd64` | `uds-lsp-darwin-amd64` |
+| `linux-arm64` | `linux` | `arm64` | `uds-lsp-linux-arm64` |
+| `linux-x64` | `linux` | `amd64` | `uds-lsp-linux-amd64` |
+| `win32-arm64` | `windows` | `arm64` | `uds-lsp-windows-arm64.exe` |
+| `win32-x64` | `windows` | `amd64` | `uds-lsp-windows-amd64.exe` |
+
+For a single standalone cross-compilation target:
+
+```console
+UDS_LSP_TARGET=darwin-arm64 uds run build-lsp-target
+```
+
+No npm dependency installation is needed for standalone LSP builds. VSIX
+packaging builds the same named artifact and copies it into the extension as
+`bin/uds-lsp` (`bin/uds-lsp.exe` on Windows). The standalone and bundled bytes
+match, and both remain available for distribution. Each build refreshes
+`build/lsp-checksums.txt` for the available standalone variants. Verify it from
+the repository root with `sha256sum -c build/lsp-checksums.txt`.
+
 Build Unix distributables on macOS or Linux to preserve executable permissions.
 Consumers install one matching VSIX; it includes the server and repository
-license. The packaging tasks do not publish or change release workflows.
-See the [extension README](vscode-extension/README.md) for installation, remote
-host selection, and executable overrides, and
-[ADR-0028](docs/adr/0028-bundled-vscode-language-server.md) for the packaging and
-server-selection decisions.
+license. Distribute the repository license alongside standalone binaries.
+The packaging tasks do not publish or change release workflows. See the
+[extension README](vscode-extension/README.md) for installation, remote host
+selection, and executable overrides.
 
 ### Hooks and linting
 

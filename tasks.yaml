@@ -30,6 +30,16 @@ tasks:
       - cmd: mkdir -p build
       - cmd: go build -mod=mod -o build/ ./cmd/uds-lsp
 
+  - name: build-lsp-target
+    description: build a distributable LSP for this machine (override with UDS_LSP_TARGET) and generate checksums
+    actions:
+      - cmd: node hack/build-lsp.mjs
+
+  - name: build-lsp-all
+    description: build standalone LSP binaries for macOS, Linux, and Windows (x64 and arm64) and generate checksums
+    actions:
+      - cmd: node hack/build-lsp.mjs --all
+
   - name: build-vscode-extension
     description: package the VS Code extension with its LSP for this machine (override with UDS_VSCODE_TARGET)
     actions:
@@ -146,13 +156,15 @@ tasks:
           - name: BUILD_ARGS
 
   - name: build-all
-    description: build all the CLI binaries and gen checksums
+    description: build all CLI and LSP binaries and generate checksums
     actions:
       - task: build-cli-linux-amd
       - task: build-cli-linux-arm
       - task: build-cli-mac-intel
       - task: build-cli-mac-apple
+      - task: build-lsp-all
       - cmd: sha256sum build/uds build/uds-arm build/uds-mac-intel build/uds-mac-apple > build/checksums.txt
+      - cmd: cat build/lsp-checksums.txt >> build/checksums.txt
 
   - name: build-cli-linux-amd
     description: build the CLI for Linux AMD64

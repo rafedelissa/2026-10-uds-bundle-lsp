@@ -22,6 +22,23 @@ The `Snapshot Release` workflow runs daily at 03:00 UTC against `main`; manual d
 
 Snapshots do not update Homebrew or become the latest release. Scheduled cleanup retains the newest three snapshot prereleases and preserves their tags.
 
+## Build language server artifacts
+
+With the [development tools](CONTRIBUTING.md#set-up-the-development-environment)
+installed and mise activated, run these commands from the repository root:
+
+```sh
+uds run build-lsp-all
+uds run build-vscode-extension-all
+```
+
+The first task creates standalone LSP executables for macOS, Linux, and Windows
+on amd64 and arm64, plus `build/lsp-checksums.txt`. The second packages each
+matching server in a platform-specific VSIX and retains the standalone files.
+`uds run build-all` also includes the LSP binaries alongside the existing CLI
+artifacts. See [Contributing](CONTRIBUTING.md#building-the-app) for artifact names,
+target selection, and checksums.
+
 ## Official Documentation
 Official documentation is located at [docs.defenseunicorns.com/cli/](https://docs.defenseunicorns.com/cli/)
 
