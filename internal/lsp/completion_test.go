@@ -6,9 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/defenseunicorns/uds-cli/internal/bundle"
 	"github.com/defenseunicorns/uds-cli/pkg/iostreams"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -37,7 +40,7 @@ func TestBundleCompletionContext(t *testing.T) {
 		{name: "locals", text: "locals {\n |\n}\n"},
 		{name: "expression", text: "metadata {\n name = local.|\n}\n"},
 		{name: "object expression", text: "metadata {\n name = {\n |\n }\n}\n"},
-		{name: "list expression", text: "package \"app\" {\n values_files = [\n |\n ]\n}\n"},
+		{name: "list expression", text: "package \"app\" {\n values_files = [\n |\n ]\n}\n", want: []string{"file", "sys"}},
 		{name: "quoted string", text: "metadata { name = \"a|b\" }\n"},
 		{name: "string interpolation", text: "metadata { name = \"${local.|}\" }\n"},
 		{name: "heredoc", text: "metadata {\n name = <<EOT\n |\nEOT\n}\n"},
@@ -66,6 +69,123 @@ func TestBundleCompletionContext(t *testing.T) {
 			}
 			for _, name := range tt.exclude {
 				assert.NotContains(t, labels, name)
+			}
+		})
+	}
+}
+
+func TestHCLValueCompletion(t *testing.T) {
+	tests := []struct {
+		name    string
+		uri     string
+		marked  string
+		want    []string
+		newText string
+	}{
+		{name: "system namespace", uri: "file:///workspace/bundle.uds.hcl", marked: `metadata { name = sy| }`, want: []string{"sys"}, newText: "sys."},
+		{name: "system architecture", uri: "file:///workspace/bundle.uds.hcl", marked: `metadata { name = sys.| }`, want: []string{"arch"}, newText: "arch"},
+		{name: "system interpolation", uri: "file:///workspace/bundle.uds.hcl", marked: `package "app" { source = "${sy|}" }`, want: []string{"sys"}, newText: "sys."},
+		{name: "system namespace in boolean", uri: "file:///workspace/bundle.uds.hcl", marked: `package "app" { signature_verification { verify = sys.| } }`, want: []string{}},
+		{name: "package namespace outside dependency", uri: "file:///workspace/bundle.uds.hcl", marked: "package \"base\" { source = \"oci://example\" }\nmetadata { name = package.| }", want: []string{}},
+		{name: "local namespace in dependency", uri: "file:///workspace/bundle.uds.hcl", marked: "locals { base = true }\npackage \"app\" {\n source = \"oci://example\"\n depends_on = [local.|]\n}", want: []string{}},
+		{name: "file function", uri: "file:///workspace/bundle.uds.hcl", marked: `metadata { name = fi| }`, want: []string{"file"}, newText: `file("${1:path}")`},
+		{name: "file function in locals", uri: "file:///workspace/bundle.uds.hcl", marked: "locals {\n certificate = fi|\n}\n", want: []string{"file"}, newText: `file("${1:path}")`},
+		{name: "boolean", uri: "file:///workspace/bundle.uds.hcl", marked: "package \"app\" {\n signature_verification {\n  verify = |\n }\n}\n", want: []string{"false", "true"}},
+		{name: "config boolean", uri: "file:///workspace/config.uds.hcl", marked: "options {\n plain_http = tr|\n}\n", want: []string{"true"}, newText: "true"},
+		{name: "log level", uri: "file:///workspace/config.uds.hcl", marked: `options { log_level = "wa|" }`, want: []string{"warn", "warning"}},
+		{name: "architecture", uri: "file:///workspace/config.uds.hcl", marked: `options { architecture = "arm|" }`, want: []string{"arm64"}},
+		{name: "dynamic field with known name", uri: "file:///workspace/bundle.uds.hcl", marked: `locals { architecture = "arm|" }`, want: []string{}},
+		{name: "bundle API version", uri: "file:///workspace/bundle.uds.hcl", marked: `uds { bundle_api_version = "uds|" }`, want: []string{"uds.dev/v1alpha1"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			text, pos := hoverPosition(t, tt.marked)
+			store := newDocumentStore()
+			store.completionSnippetSupport = true
+			store.documents[tt.uri] = document{URI: tt.uri, Text: text}
+
+			result := store.complete(t.Context(), documentPositionParams{
+				TextDocument: textDocumentIdentifier{URI: tt.uri},
+				Position:     &pos,
+			})
+
+			assert.Equal(t, tt.want, completionLabels(result))
+			if tt.newText != "" {
+				assert.Equal(t, tt.newText, completionByLabel(t, result, tt.want[0]).TextEdit.NewText)
+			}
+		})
+	}
+}
+
+func TestHCLPathCompletion(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "values", "nested"), 0o700))
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "packages"), 0o700))
+	for _, path := range []string{"values/app.yaml", "values/ignored.txt", "package.tar.zst", "public.pem"} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, path), []byte("test"), 0o600))
+	}
+
+	tests := []struct {
+		name    string
+		uri     string
+		marked  string
+		want    []string
+		newText string
+	}{
+		{
+			name:   "package source",
+			uri:    valuesFileURI(filepath.Join(dir, bundle.BundleFileName)),
+			marked: "package \"app\" {\n source = \"./pac|\"\n}\n",
+			want:   []string{"./package.tar.zst", "./packages/"},
+		},
+		{
+			name:    "package source without closing quote",
+			uri:     valuesFileURI(filepath.Join(dir, bundle.BundleFileName)),
+			marked:  "package \"app\" {\n source = \"./pac|\n}\n",
+			want:    []string{"./package.tar.zst", "./packages/"},
+			newText: `./package.tar.zst"`,
+		},
+		{
+			name:   "values files",
+			uri:    valuesFileURI(filepath.Join(dir, bundle.BundleFileName)),
+			marked: "package \"app\" {\n values_files = [\"values/|\"]\n}\n",
+			want:   []string{"values/app.yaml", "values/nested/"},
+		},
+		{
+			name:   "file function",
+			uri:    valuesFileURI(filepath.Join(dir, bundle.BundleFileName)),
+			marked: "metadata {\n name = file(\"p|\")\n}\n",
+			want:   []string{"package.tar.zst", "packages/", "public.pem"},
+		},
+		{
+			name:   "temporary directory",
+			uri:    valuesFileURI(filepath.Join(dir, bundle.BundleConfigFileName)),
+			marked: "options {\n tmp_dir = \"v|\"\n}\n",
+			want:   []string{"values/"},
+		},
+		{
+			name:   "dynamic field with known name",
+			uri:    valuesFileURI(filepath.Join(dir, bundle.BundleFileName)),
+			marked: `locals { source = "./pac|" }`,
+			want:   []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			text, pos := hoverPosition(t, tt.marked)
+			store := newDocumentStore()
+			store.documents[tt.uri] = document{URI: tt.uri, Text: text}
+
+			result := store.complete(t.Context(), documentPositionParams{
+				TextDocument: textDocumentIdentifier{URI: tt.uri},
+				Position:     &pos,
+			})
+
+			assert.Equal(t, tt.want, completionLabels(result))
+			if tt.newText != "" {
+				assert.Equal(t, tt.newText, completionByLabel(t, result, tt.want[0]).TextEdit.NewText)
 			}
 		})
 	}
@@ -124,10 +244,7 @@ func TestFileSpecificCompletion(t *testing.T) {
 				Position:     &pos,
 			})
 
-			labels := make([]string, 0, len(result.Items))
-			for _, item := range result.Items {
-				labels = append(labels, item.Label)
-			}
+			labels := completionLabels(result)
 			for _, label := range tt.want {
 				assert.Contains(t, labels, label)
 			}
@@ -362,6 +479,14 @@ func TestServeCompletion(t *testing.T) {
 			}
 		})
 	}
+}
+
+func completionLabels(result completionList) []string {
+	labels := make([]string, 0, len(result.Items))
+	for _, item := range result.Items {
+		labels = append(labels, item.Label)
+	}
+	return labels
 }
 
 func completionByLabel(t *testing.T, result completionList, label string) completionItem {

@@ -44,11 +44,16 @@ type templateCursor struct {
 const (
 	insertTextFormatPlainText   = 1
 	insertTextFormatSnippet     = 2
+	completionItemKindFunction  = 3
 	completionItemKindVariable  = 6
 	completionItemKindModule    = 9
 	completionItemKindProperty  = 10
+	completionItemKindValue     = 12
+	completionItemKindKeyword   = 14
 	completionItemKindSnippet   = 15
+	completionItemKindFile      = 17
 	completionItemKindReference = 18
+	completionItemKindFolder    = 19
 )
 
 func (s *documentStore) complete(ctx context.Context, params documentPositionParams) completionList {
@@ -65,12 +70,13 @@ func (s *documentStore) complete(ctx context.Context, params documentPositionPar
 	if definitionFields == nil {
 		return s.completeValuesFile(ctx, doc, offset)
 	}
+	if values, found := s.completeHCLString(doc, definitionFields, offset); found {
+		return values
+	}
 	start, end, next := completionWord(doc.Text, doc.URI, offset)
 	marker := completionMarker(doc.Text)
-	if isBundle {
-		if references, found := s.completeReference(doc, start, end, next, marker); found {
-			return references
-		}
+	if values, found := s.completeHCLExpression(doc, definitionFields, isBundle, start, end, next, marker); found {
+		return values
 	}
 
 	// Repair only the word being completed in a temporary buffer. The HCL

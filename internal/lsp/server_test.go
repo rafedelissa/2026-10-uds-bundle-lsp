@@ -38,7 +38,7 @@ func TestServeLifecycle(t *testing.T) {
 	assert.Nil(t, responses[0].Error)
 	assert.JSONEq(t, `{
 		"capabilities": {
-			"completionProvider": {"resolveProvider": false, "triggerCharacters": ["{", ".", "\""]},
+			"completionProvider": {"resolveProvider": false, "triggerCharacters": ["{", ".", "\"", "/"]},
 			"definitionProvider": true,
 			"documentHighlightProvider": true,
 			"hoverProvider": true,
