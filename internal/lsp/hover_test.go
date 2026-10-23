@@ -26,8 +26,8 @@ func TestBundleHover(t *testing.T) {
 		{name: "required attribute", text: "package \"app\" {\n  so|urce = \"app\"\n}\n", want: []string{"```hcl\nsource = \"...\"\n```", "**Required**", "Type: `string`", "*Parser schema*"}},
 		{name: "optional list", text: "package \"app\" {\n  values_|files = []\n}\n", want: []string{"```hcl\nvalues_files = []\n```", "`list(string)`", "**Optional**"}},
 		{name: "optional pointer", text: "package \"app\" {\n signature_verification {\n ver|ify = false\n }\n}\n", want: []string{"```hcl\nverify = false\n```", "`bool`", "**Optional**"}},
-		{name: "nested block", text: "package \"app\" {\n signature_verification {\n key|less {}\n }\n}\n", want: []string{"`keyless`", "`certificate_identity`", "`insecure_ignore_tlog`"}},
-		{name: "block overview", text: "pack|age \"app\" {\n source = \"app\"\n}\n", want: []string{"**`package \"<name>\"`**", "repeatable", "| Field | Type | Required |", "| `source` | `string` | Yes |", "| `signature_verification` | `block` | No |"}},
+		{name: "nested block", text: "package \"app\" {\n signature_verification {\n key|less {}\n }\n}\n", want: []string{"`keyless`", "certificate_identity", "insecure_ignore_tlog"}},
+		{name: "block overview", text: "pack|age \"app\" {\n source = \"app\"\n}\n", want: []string{"**`package \"<name>\"`**", "repeatable", "| Field", "| source", "| signature_verification"}},
 		{name: "package label", text: "package \"ap|p\" {\n source = \"app\"\n}\n", want: []string{"`package \"<name>\"`"}},
 		{name: "metadata field", text: "metadata { na|me = \"example\" }\n", want: []string{"name = \"...\"", "**Required**"}},
 		{name: "semantic errors elsewhere", text: "metadata { na|me = local.missing }\n", want: []string{"name = \"...\"", "`string`"}},
@@ -62,6 +62,30 @@ func TestBundleHover(t *testing.T) {
 			assertHoverRangeContains(t, text, result.Range, pos)
 		})
 	}
+}
+
+func TestMarkdownFieldTableAlignment(t *testing.T) {
+	table := markdownFieldTable([]bundle.DefinitionField{
+		{Name: "source", Type: "string", Required: true},
+		{Name: "signature_verification", Type: "block"},
+		{Name: "depends_on", Type: "list(package reference)"},
+	})
+	lines := strings.Split(table, "\n")
+	require.Len(t, lines, 5)
+	wantColumns := pipeColumns(lines[0])
+	for _, line := range lines[1:] {
+		assert.Equal(t, wantColumns, pipeColumns(line), "%q", line)
+	}
+}
+
+func pipeColumns(line string) []int {
+	var columns []int
+	for i, r := range line {
+		if r == '|' {
+			columns = append(columns, i)
+		}
+	}
+	return columns
 }
 
 func TestFileSpecificHover(t *testing.T) {

@@ -305,14 +305,36 @@ func markdownFieldHover(field bundle.DefinitionField, heading string) string {
 	text.WriteString("**`" + heading + "`**\n\n*Parser schema · " + kind + " · " + strings.ToLower(requirement) + "*")
 	text.WriteString(fieldDetailsText(field, "markdown"))
 	if len(field.Fields) > 0 {
-		text.WriteString("\n\n| Field | Type | Required |\n| --- | --- | --- |")
-		for _, child := range field.Fields {
-			required := "No"
-			if child.Required {
-				required = "Yes"
-			}
-			text.WriteString("\n| `" + child.Name + "` | `" + child.Type + "` | " + required + " |")
+		text.WriteString("\n\n" + markdownFieldTable(field.Fields))
+	}
+	return text.String()
+}
+
+func markdownFieldTable(fields []bundle.DefinitionField) string {
+	const requiredWidth = len("Required")
+	fieldWidth, typeWidth := len("Field"), len("Type")
+	for _, field := range fields {
+		fieldWidth = max(fieldWidth, len(field.Name))
+		typeWidth = max(typeWidth, len(field.Type))
+	}
+
+	var text strings.Builder
+	writeRow := func(field, fieldType, required string) {
+		if text.Len() > 0 {
+			text.WriteByte('\n')
 		}
+		text.WriteString("| " + field + strings.Repeat(" ", fieldWidth-len(field)))
+		text.WriteString(" | " + fieldType + strings.Repeat(" ", typeWidth-len(fieldType)))
+		text.WriteString(" | " + required + strings.Repeat(" ", requiredWidth-len(required)) + " |")
+	}
+	writeRow("Field", "Type", "Required")
+	writeRow(strings.Repeat("-", fieldWidth), strings.Repeat("-", typeWidth), strings.Repeat("-", requiredWidth))
+	for _, field := range fields {
+		required := "No"
+		if field.Required {
+			required = "Yes"
+		}
+		writeRow(field.Name, field.Type, required)
 	}
 	return text.String()
 }
