@@ -14,6 +14,7 @@ var (
 	ErrAccessDefaults        = errors.New("accessing bundle defaults")
 	ErrParseBundle           = errors.New("parsing bundle")
 	ErrInvalidBundle         = errors.New("invalid bundle")
+	ErrLintFailed            = errors.New("bundle lint failed")
 	ErrForceRequired         = errors.New("operation requires force")
 	ErrPullBundle            = errors.New("pulling bundle")
 	ErrPushBundle            = errors.New("pushing bundle")
