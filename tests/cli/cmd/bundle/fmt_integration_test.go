@@ -15,6 +15,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestFmtCheckCommand_Integration(t *testing.T) {
+	root := t.TempDir()
+	filename := filepath.Join(root, bundle.BundleFileName)
+	const source = "metadata {\nname=\"demo\"\n}\n"
+	require.NoError(t, os.WriteFile(filename, []byte(source), 0o600))
+
+	output, err := executeCLI(t, "", "bundle", "fmt", root, "--check")
+
+	require.Error(t, err)
+	assert.Equal(t, "Would format bundle.uds.hcl\n", output)
+	content, readErr := os.ReadFile(filename)
+	require.NoError(t, readErr)
+	assert.Equal(t, source, string(content))
+}
+
 func TestFmtCommand_Integration(t *testing.T) {
 	root := t.TempDir()
 	filename := filepath.Join(root, bundle.BundleFileName)

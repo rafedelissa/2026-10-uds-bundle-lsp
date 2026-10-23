@@ -36,6 +36,24 @@ func TestFmtCommandFormatsWorkspace(t *testing.T) {
 	assert.Equal(t, os.FileMode(0o640), info.Mode().Perm())
 }
 
+func TestFmtCommandCheckReportsUnformattedFilesWithoutWriting(t *testing.T) {
+	root := t.TempDir()
+	filename := filepath.Join(root, bundleFileName)
+	const source = "metadata {\nname=\"demo\"\n}\n"
+	require.NoError(t, os.WriteFile(filename, []byte(source), 0o600))
+	streams, _, out, _ := iostreams.NewTestIOStreams()
+	cmd := NewBundleCommand(streams)
+	cmd.SetArgs([]string{"fmt", root, "--check"})
+
+	err := cmd.ExecuteContext(t.Context())
+
+	require.ErrorIs(t, err, ErrFormatCheckFailed)
+	assert.Equal(t, "Would format bundle.uds.hcl\n", out.String())
+	content, readErr := os.ReadFile(filename)
+	require.NoError(t, readErr)
+	assert.Equal(t, source, string(content))
+}
+
 func TestWriteFormattedDocumentRejectsChangedSource(t *testing.T) {
 	filename := filepath.Join(t.TempDir(), bundleFileName)
 	const original = "metadata {\nname=\"original\"\n}\n"
@@ -96,12 +114,12 @@ func TestWriteFormattedDocumentPreservesSymlink(t *testing.T) {
 	assert.Equal(t, formatted, string(content))
 }
 
-func TestFmtCommandReportsCleanWorkspace(t *testing.T) {
+func TestFmtCommandCheckAcceptsCleanWorkspace(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, bundleFileName), []byte("metadata {\n  name = \"demo\"\n}\n"), 0o600))
 	streams, _, out, _ := iostreams.NewTestIOStreams()
 	cmd := NewBundleCommand(streams)
-	cmd.SetArgs([]string{"fmt", root})
+	cmd.SetArgs([]string{"fmt", root, "--check"})
 
 	require.NoError(t, cmd.ExecuteContext(t.Context()))
 	assert.Equal(t, "No formatting changes required.\n", out.String())
@@ -118,6 +136,27 @@ func TestFmtCommandPrintsStructuredResult(t *testing.T) {
 	var result fmtResult
 	require.NoError(t, json.Unmarshal(out.Bytes(), &result))
 	assert.Equal(t, []string{bundleFileName}, result.Formatted)
+}
+
+func TestFmtCommandCheckPrintsUnformattedStructuredResult(t *testing.T) {
+	root := t.TempDir()
+	filename := filepath.Join(root, bundleFileName)
+	const source = "metadata {\nname=\"demo\"\n}\n"
+	require.NoError(t, os.WriteFile(filename, []byte(source), 0o600))
+	streams, _, out, _ := iostreams.NewTestIOStreams()
+	cmd := NewBundleCommand(streams)
+	cmd.SetArgs([]string{"fmt", root, "--check", "--output", "json"})
+
+	err := cmd.ExecuteContext(t.Context())
+
+	require.ErrorIs(t, err, ErrFormatCheckFailed)
+	var result map[string][]string
+	require.NoError(t, json.Unmarshal(out.Bytes(), &result))
+	assert.Equal(t, []string{bundleFileName}, result["unformatted"])
+	assert.NotContains(t, result, "formatted")
+	content, readErr := os.ReadFile(filename)
+	require.NoError(t, readErr)
+	assert.Equal(t, source, string(content))
 }
 
 func TestFmtCommandRejectsEmptyPathAndUnsupportedFlags(t *testing.T) {

@@ -45,12 +45,12 @@ func TestLintCommandReportsDiagnostics(t *testing.T) {
 	assert.Contains(t, out.String(), ": error:")
 }
 
-func TestLintCommandSucceedsWithoutDiagnostics(t *testing.T) {
+func TestLintCommandCheckSucceedsWithoutDiagnostics(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, bundleFileName), []byte(validLintBundle), 0o600))
 	streams, _, out, _ := iostreams.NewTestIOStreams()
 	cmd := NewLintCommand(streams)
-	cmd.SetArgs([]string{root})
+	cmd.SetArgs([]string{root, "--check"})
 
 	require.NoError(t, cmd.ExecuteContext(t.Context()))
 	assert.Equal(t, "No issues found.\n", out.String())
@@ -98,6 +98,19 @@ func TestLintOptionsPrintsStructuredResult(t *testing.T) {
 
 	require.NoError(t, o.printResult(result))
 	assert.JSONEq(t, `{"diagnostics":[{"path":"bundle.uds.hcl","line":0,"column":0,"severity":"error","message":""}],"errors":1,"warnings":0}`, out.String())
+}
+
+func TestLintCheckTreatsEveryDiagnosticAsAnIssue(t *testing.T) {
+	o := LintOptions{Check: true}
+	result := lintResult{Diagnostics: []lsp.LintDiagnostic{{Severity: lsp.LintSeverityWarning}}, Warnings: 1}
+
+	err := o.resultError(result)
+
+	require.ErrorIs(t, err, ErrLintFailed)
+	assert.Contains(t, err.Error(), "lint check found 1 issue")
+
+	o.Check = false
+	assert.NoError(t, o.resultError(result))
 }
 
 func TestNewLintResultCountsErrorsAndWarnings(t *testing.T) {

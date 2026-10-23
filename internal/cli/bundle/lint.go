@@ -18,6 +18,7 @@ import (
 type LintOptions struct {
 	Path   string
 	Format printer.Format
+	Check  bool
 
 	iostreams.IOStreams
 }
@@ -45,6 +46,7 @@ func NewLintCommand(streams iostreams.IOStreams) *cobra.Command {
 			return o.Run(cmd.Context())
 		},
 	}
+	cmd.Flags().BoolVar(&o.Check, "check", false, "Return an error if any diagnostics are found")
 	return cmd
 }
 
@@ -77,14 +79,25 @@ func (o *LintOptions) Run(ctx context.Context) error {
 	if err := o.printResult(result); err != nil {
 		return fmt.Errorf("print lint result: %w", err)
 	}
-	if result.Errors > 0 {
-		diagnostic := "diagnostics"
-		if result.Errors == 1 {
-			diagnostic = "diagnostic"
+	return o.resultError(result)
+}
+
+func (o *LintOptions) resultError(result lintResult) error {
+	if o.Check && len(result.Diagnostics) > 0 {
+		issue := "issues"
+		if len(result.Diagnostics) == 1 {
+			issue = "issue"
 		}
-		return fmt.Errorf("lint found %d error %s: %w", result.Errors, diagnostic, ErrLintFailed)
+		return fmt.Errorf("lint check found %d %s: %w", len(result.Diagnostics), issue, ErrLintFailed)
 	}
-	return nil
+	if result.Errors == 0 {
+		return nil
+	}
+	diagnostic := "diagnostics"
+	if result.Errors == 1 {
+		diagnostic = "diagnostic"
+	}
+	return fmt.Errorf("lint found %d error %s: %w", result.Errors, diagnostic, ErrLintFailed)
 }
 
 type lintResult struct {
