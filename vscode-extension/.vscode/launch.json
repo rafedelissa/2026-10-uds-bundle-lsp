@@ -11,14 +11,6 @@
 			"request": "launch",
 			"runtimeExecutable": "${execPath}",
 			"cwd": "${workspaceFolder}",
-			"env": {
-				"PATH": "${workspaceFolder}/../build:${env:PATH}"
-			},
-			"windows": {
-				"env": {
-					"PATH": "${workspaceFolder}/../build;${env:PATH}"
-				}
-			},
 			"args": [
 				"--log=trace",
 				"--extensionDevelopmentPath=${workspaceFolder}"

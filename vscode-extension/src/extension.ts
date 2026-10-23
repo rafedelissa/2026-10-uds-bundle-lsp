@@ -1,5 +1,6 @@
-import { commands, workspace, ExtensionContext } from 'vscode';
+import { commands, workspace, ExtensionContext, ExtensionMode } from 'vscode';
 import { LanguageClient, LanguageClientOptions, ServerOptions } from 'vscode-languageclient/node';
+import { resolveServerPath } from './serverPath';
 
 let client: LanguageClient | undefined;
 
@@ -11,7 +12,11 @@ const documentPatterns = [
 export async function activate(context: ExtensionContext): Promise<void> {
     const configuration = workspace.getConfiguration('udsLsp');
     const serverOptions: ServerOptions = {
-        command: configuration.get<string>('serverPath', 'uds-lsp'),
+        command: resolveServerPath({
+            configuredPath: configuration.get<string>('serverPath'),
+            extensionPath: context.extensionPath,
+            development: context.extensionMode === ExtensionMode.Development
+        }),
         args: configuration.get<string[]>('serverArgs', [])
     };
 

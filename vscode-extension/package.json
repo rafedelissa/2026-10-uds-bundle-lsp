@@ -22,6 +22,7 @@
     "workspaceContains:**/{bundle,defaults,config}.uds.hcl"
   ],
   "main": "./dist/extension.js",
+  "extensionKind": ["workspace"],
   "contributes": {
     "commands": [
       {
@@ -41,8 +42,9 @@
       "properties": {
         "udsLsp.serverPath": {
           "type": "string",
-          "default": "uds-lsp",
-          "description": "Executable name on PATH or an absolute path to uds-lsp. Shell and VS Code variables are not expanded. Reload the window after changing this setting."
+          "default": "",
+          "scope": "machine-overridable",
+          "description": "Optional executable name on PATH or absolute path overriding the bundled server (or repository build in development). Leave empty for automatic selection. Shell and VS Code variables are not expanded. Reload the window after changing this setting."
         },
         "udsLsp.serverArgs": {
           "type": "array",
@@ -66,11 +68,13 @@
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
     "package": "npm run check-types && npm run lint && node esbuild.js --production",
-    "package:vsix": "vsce package --no-dependencies --baseContentUrl https://github.com/defenseunicorns/uds-cli/blob/HEAD/vscode-extension/ --out ../build/uds-lsp-extension.vsix",
+    "prepackage:vsix": "npm run test:unit && npm run package",
+    "package:vsix": "node scripts/package-vsix.mjs",
     "compile-tests": "tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "npm run compile-tests && npm run compile && npm run lint",
     "check-types": "tsc --noEmit",
+    "test:unit": "npm run compile-tests && node --test out/serverPath.test.js",
     "lint": "eslint src",
     "test": "vscode-test"
   },

@@ -1,8 +1,8 @@
 # UDS language support for VS Code
 
-This extension connects VS Code to the external `uds-lsp` language server.
-It validates `bundle.uds.hcl`, `defaults.uds.hcl`, `config.uds.hcl`, and
-referenced YAML values templates, including unsaved edits.
+This extension includes the `uds-lsp` language server. It validates
+`bundle.uds.hcl`, `defaults.uds.hcl`, `config.uds.hcl`, and referenced YAML
+values templates, including unsaved edits.
 
 Workspace file creation, changes, and deletion are forwarded for these HCL and
 YAML files. Open `.yaml` and `.yml` files outside the workspace are also
@@ -10,29 +10,50 @@ synchronized. The server determines which YAML files are referenced values
 files; disk changes outside the workspace's watched scope refresh on the next
 document synchronization event.
 
-## Install and configure
+## Install
 
-You need VS Code 1.140.0 or later and a `uds-lsp` executable built for the machine
-running the extension. The VSIX contains the client; it does not bundle or
-download the language server.
+Use VS Code 1.140.0 or later. Install the VSIX matching the operating system and
+architecture of the extension host. The package includes its server; consumers
+need no separate LSP installation, Go toolchain, or executable path setting.
 
-From a checkout of this repository with the
-[development tools](../CONTRIBUTING.md#set-up-the-development-environment)
-installed, run these commands at the repository root:
+| Platform | VSIX target |
+| --- | --- |
+| macOS, Apple silicon | `darwin-arm64` |
+| macOS, Intel | `darwin-x64` |
+| Linux, ARM64 | `linux-arm64` |
+| Linux, x86-64 | `linux-x64` |
+| Windows, ARM64 | `win32-arm64` |
+| Windows, x86-64 | `win32-x64` |
+
+In VS Code, use **Extensions: Install from VSIX...** and select the matching
+file. You can also install it from a shell. For example, on Apple silicon
+macOS, with the artifact in `build/`:
 
 ```console
-uds run build-lsp
-uds run build-vscode-extension
-code --install-extension build/uds-lsp-extension.vsix
+code --install-extension build/uds-lsp-extension-darwin-arm64.vsix
 ```
 
-If the `code` command is unavailable, use **Extensions: Install from VSIX...**
-in VS Code and select `build/uds-lsp-extension.vsix`. Consumers who receive an
-already built VSIX and a matching `uds-lsp` executable can skip the build steps.
+Open a UDS HCL file to activate the client. Updating the extension also updates
+the bundled server.
 
-By default, the extension runs `uds-lsp` from the extension host's `PATH`.
-Place the executable in a directory already on that `PATH`, or open
-**Preferences: Open User Settings (JSON)** and set its absolute path:
+In Remote SSH, WSL, or a dev container, install the extension in the remote
+workspace environment and choose the package for that environment. A macOS
+desktop connected to an x86-64 Linux workspace needs the `linux-x64` package
+on the remote host. Browser-only extension hosts cannot run the native server.
+
+If you previously configured `udsLsp.serverPath`, reset it to its empty default
+to use the bundled server.
+
+## Settings
+
+| Setting | Default | Behavior |
+| --- | --- | --- |
+| `udsLsp.serverPath` | Empty string | Automatically selects the bundled server, or the repository build in development. A nonempty value overrides automatic selection. |
+| `udsLsp.serverArgs` | `[]` | Arguments passed to the server, which must communicate over stdin/stdout. |
+| `udsLsp.trace.server` | `off` | LSP protocol trace level: `off`, `messages`, or `verbose`. Also set the UDS LSP output channel log level to Trace to see protocol traces. |
+
+For a custom server build, open **Preferences: Open User Settings (JSON)** and
+set its absolute executable path. Replace this example with your actual path:
 
 ```json
 {
@@ -40,49 +61,82 @@ Place the executable in a directory already on that `PATH`, or open
 }
 ```
 
-Replace the example path with the actual executable path. In the Settings UI,
-search for `udsLsp.serverPath` to edit the same setting without JSON. User
-settings apply across projects; a workspace's `.vscode/settings.json` can
-override them for that project. Keep machine-specific paths out of shared
-workspace settings. In Remote SSH, WSL, or a dev container, install and
-configure the executable on the machine running the workspace extension host.
-
-Reload the VS Code window after changing the executable path or arguments.
-Open a UDS HCL file to activate the client. Once it is running, use **UDS LSP:
-Restart Server** after replacing or rebuilding the executable at the same path.
-
-## Settings
-
-| Setting | Default | Behavior |
-| --- | --- | --- |
-| `udsLsp.serverPath` | `uds-lsp` | Executable name on `PATH` or an absolute path. |
-| `udsLsp.serverArgs` | `[]` | Arguments passed to the server, which must communicate over stdin/stdout. |
-| `udsLsp.trace.server` | `off` | LSP protocol trace level: `off`, `messages`, or `verbose`. Also set the UDS LSP output channel log level to Trace to see protocol traces. |
+You can also search for `udsLsp.serverPath` in the Settings UI. Set it to
+`uds-lsp` to explicitly use a server on the extension host's `PATH`. User
+settings apply across projects; workspace settings can override them for one
+project. Keep machine-specific paths out of shared workspace settings. Remote
+settings and executable overrides refer to the extension host's machine.
 
 `serverPath` is passed directly to the process launcher. Do not add shell
 quotes around the value or use `~`, `${workspaceFolder}`, or `${env:...}`;
 the extension does not expand these expressions in settings.
 
+Reload the VS Code window after changing the executable path or arguments.
+Use **UDS LSP: Restart Server** after replacing the executable at the same path.
+
 ## Develop the extension
 
-Run `uds run build-vscode-extension` once from the repository root to install
-the locked npm dependencies and verify packaging. Then open `vscode-extension/`
-as a VS Code folder and press F5 with **Run LSP Client** selected.
+With the repository's
+[development tools](../CONTRIBUTING.md#set-up-the-development-environment)
+installed and mise activated, run these commands from the repository root:
 
-The launch task builds `../build/uds-lsp` and starts the TypeScript and esbuild
-watchers. The Extension Development Host receives a `PATH` with `../build`
-prepended, resolved from the extension folder. Leave `udsLsp.serverPath` at
-its default `uds-lsp` to use that binary. An explicit setting overrides the
-`PATH` lookup. This launch environment applies only to development sessions.
+```console
+npm --prefix vscode-extension ci
+code vscode-extension
+```
 
-Open `tests/test_data/lsp/` from this repository in the Extension Development
-Host and follow the [validation playground](../tests/test_data/lsp/README.md)
-to check diagnostics. After changing Go code, run `uds run build-lsp` from
-the repository root and use **UDS LSP: Restart Server**. F5 debugs the
-TypeScript client; Go server breakpoints require a separate Go debugger session.
+Press F5 with **Run LSP Client** selected. The launch task builds
+`build/uds-lsp` (`build/uds-lsp.exe` on Windows) and starts the TypeScript and
+esbuild watchers. In development mode, the client resolves that repository
+build directly, independently of `PATH` and of the workspace opened in the
+Extension Development Host. Leave `udsLsp.serverPath` empty for this behavior;
+a nonempty setting overrides it.
 
-For a new installable artifact, rerun `uds run build-vscode-extension`. It
-copies the repository license, installs dependencies with `npm ci`, runs type
-and lint checks, bundles the client, and packages
-`build/uds-lsp-extension.vsix`. This task packages locally and does not publish
-to the Marketplace.
+Open `tests/test_data/lsp/` from this repository in the Development Host and
+follow the [validation playground](../tests/test_data/lsp/README.md) to check
+diagnostics. After changing Go code, run `uds run build-lsp` from the repository
+root and use **UDS LSP: Restart Server**. After changing TypeScript, the watchers
+rebuild the client; reload the Development Host to load the changes. F5 debugs
+the TypeScript client; Go breakpoints require a separate Go debugger session.
+
+Run `uds run test-vscode-extension` to install locked dependencies and check
+client types, lint, and executable selection without opening VS Code.
+
+## Build distributable packages
+
+From the repository root with the development tools installed, run:
+
+```console
+uds run build-vscode-extension
+```
+
+This installs locked npm dependencies, runs client unit tests, checks types and
+lint, bundles the client, cross-compiles a server for the current host target,
+and creates `build/uds-lsp-extension-<target>.vsix`. The target is one of the
+values in the installation table above. Each package includes only its matching
+server, the bundled client, the manifest, the README, the changelog, and the
+repository license.
+
+To select a target explicitly, for example Apple silicon macOS from a Linux
+build host:
+
+```console
+UDS_VSCODE_TARGET=darwin-arm64 uds run build-vscode-extension
+```
+
+After dependencies are installed, the equivalent npm entrypoint is:
+
+```console
+npm --prefix vscode-extension run package:vsix -- --target darwin-arm64
+```
+
+To build all six supported targets:
+
+```console
+uds run build-vscode-extension-all
+```
+
+Build Unix distributables on macOS or Linux to preserve executable permissions
+in the VSIX. Go cross-compilation uses `CGO_ENABLED=0`. Packaging uses a separate
+temporary directory per target and preserves the local `build/uds-lsp` used by
+F5. Packaging runs locally and does not publish to the Marketplace.

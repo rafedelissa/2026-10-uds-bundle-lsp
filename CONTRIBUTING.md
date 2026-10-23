@@ -80,32 +80,51 @@ To build local binaries, run `uds run build`. This creates `build/uds` and
 `build/uds-lsp`. Use `uds run --list-all` for platform-specific and release
 builds; CI uses `uds run build-cli-linux-amd`.
 
-For VS Code extension development, run these tasks from the repository root:
+For VS Code extension development, install the client dependencies from the
+repository root, then open the extension folder:
 
 ```console
-uds run build-lsp
-uds run build-vscode-extension
+npm --prefix vscode-extension ci
+code vscode-extension
 ```
 
-`build-lsp` builds only `build/uds-lsp`. `build-vscode-extension` installs the
-locked npm dependencies, checks types and lint, bundles the client, and creates
-`build/uds-lsp-extension.vsix`. The VSIX includes the client and repository
-license; it requires a separately installed `uds-lsp` executable.
-
-To debug the client, open `vscode-extension/` as a VS Code folder, install its
-recommended development extensions, and press F5. The launch task rebuilds the
-LSP and starts the client watchers. Its environment adds the repository's
-`build/` directory to `PATH`, so the default `udsLsp.serverPath` of `uds-lsp`
-uses the local build. Reset any explicit `udsLsp.serverPath` override to use
-this development setup. Open the
+Install its recommended development extensions and press F5. The launch task
+rebuilds the LSP and starts the client watchers. In development mode the client
+resolves the repository's `build/uds-lsp` directly (`build/uds-lsp.exe` on
+Windows). Leave `udsLsp.serverPath` empty for automatic selection; any nonempty
+setting overrides it. Open the
 [LSP validation playground](tests/test_data/lsp/README.md) in the Extension
 Development Host to exercise diagnostics.
 
 After changing Go code, run `uds run build-lsp` and use **UDS LSP: Restart Server**
-in the Extension Development Host. These launch settings debug the TypeScript
-client; debugging the Go server requires a separate Go debugger session.
-See the [extension README](vscode-extension/README.md) for VSIX installation
-and consumer configuration.
+in the Development Host. The TypeScript watchers rebuild client changes; reload
+the Development Host to load them. F5 debugs the client; Go server breakpoints
+require a separate Go debugger session.
+
+Use these root tasks for verification and distribution:
+
+| Task | Result |
+| --- | --- |
+| `uds run build-lsp` | Local development server in `build/`. |
+| `uds run test-vscode-extension` | Locked dependency installation, type checks, lint, and client unit tests. |
+| `uds run build-vscode-extension` | Client checks and a VSIX with its bundled server for the current host. |
+| `uds run build-vscode-extension-all` | A VSIX for each macOS, Linux, and Windows target on x64 and arm64. |
+
+Packages are named `build/uds-lsp-extension-<target>.vsix`, for example
+`build/uds-lsp-extension-darwin-arm64.vsix`. Set `UDS_VSCODE_TARGET` to select a
+single cross-compilation target:
+
+```console
+UDS_VSCODE_TARGET=darwin-arm64 uds run build-vscode-extension
+```
+
+Build Unix distributables on macOS or Linux to preserve executable permissions.
+Consumers install one matching VSIX; it includes the server and repository
+license. The packaging tasks do not publish or change release workflows.
+See the [extension README](vscode-extension/README.md) for installation, remote
+host selection, and executable overrides, and
+[ADR-0028](docs/adr/0028-bundled-vscode-language-server.md) for the packaging and
+server-selection decisions.
 
 ### Hooks and linting
 
