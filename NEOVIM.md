@@ -20,7 +20,7 @@ The LSP does not require the `NextMode` feature flag. That flag controls UDS CLI
 
 `uds-lsp` communicates over standard input and output. Start it through Neovim rather than running it interactively in a terminal.
 
-First, check [UDS CLI releases](https://github.com/defenseunicorns/uds-cli/releases) for a prebuilt `uds-lsp` binary matching macOS or Linux and your `amd64` or `arm64` architecture. If the release does not include `uds-lsp`, build it from a UDS CLI source checkout:
+First, check [UDS CLI releases](https://github.com/defenseunicorns-dashdays/2026-10-uds-bundle-lsp/releases) for a prebuilt `uds-lsp` binary matching macOS or Linux and your `amd64` or `arm64` architecture. If the release does not include `uds-lsp`, build it from a UDS CLI source checkout:
 
 ```bash
 uds run build-lsp
