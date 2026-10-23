@@ -4,7 +4,10 @@
 package lsp
 
 import (
+	"context"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/hashicorp/hcl/v2/hclwrite"
 )
@@ -24,6 +27,37 @@ type formattingOptions struct {
 	InsertSpaces bool `json:"insertSpaces"`
 }
 
+// FormattedDocument contains canonical content for a changed UDS HCL file.
+type FormattedDocument struct {
+	Path         string
+	OriginalText string
+	Text         string
+}
+
+// Format scans a bundle workspace and returns changed UDS HCL documents without writing them.
+func Format(ctx context.Context, root string) ([]FormattedDocument, error) {
+	_, store, err := indexBundleWorkspace(ctx, root, "format")
+	if err != nil {
+		return nil, err
+	}
+
+	var result []FormattedDocument
+	for _, filename := range slices.Sorted(maps.Keys(store.workspaceFiles)) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		doc, err := store.sourceDocument(filename)
+		if err != nil {
+			return nil, fmt.Errorf("read %q for formatting: %w", filename, err)
+		}
+		formatted, changed := formatUDSHCL(doc.Text)
+		if changed {
+			result = append(result, FormattedDocument{Path: filename, OriginalText: doc.Text, Text: formatted})
+		}
+	}
+	return result, nil
+}
+
 // formatDocument returns one full-document edit when canonical formatting changes UDS HCL.
 func (s *documentStore) formatDocument(params formattingParams) ([]textEdit, error) {
 	doc, found := s.document(params.TextDocument.URI)
@@ -34,8 +68,8 @@ func (s *documentStore) formatDocument(params formattingParams) ([]textEdit, err
 		return []textEdit{}, nil
 	}
 
-	formatted := string(hclwrite.Format([]byte(doc.Text)))
-	if formatted == doc.Text {
+	formatted, changed := formatUDSHCL(doc.Text)
+	if !changed {
 		return []textEdit{}, nil
 	}
 	return []textEdit{{
@@ -45,4 +79,9 @@ func (s *documentStore) formatDocument(params formattingParams) ([]textEdit, err
 		},
 		NewText: formatted,
 	}}, nil
+}
+
+func formatUDSHCL(text string) (string, bool) {
+	formatted := string(hclwrite.Format([]byte(text)))
+	return formatted, formatted != text
 }

@@ -7,6 +7,8 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/defenseunicorns/uds-cli/internal/bundle"
@@ -14,6 +16,27 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestFormatWorkspace(t *testing.T) {
+	root := t.TempDir()
+	bundlePath := filepath.Join(root, bundle.BundleFileName)
+	require.NoError(t, os.WriteFile(bundlePath, []byte("metadata {\nname=\"demo\"\n}\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(root, bundle.BundleDefaultsFileName), []byte("variables = {}\n"), 0o600))
+
+	documents, err := Format(t.Context(), root)
+
+	require.NoError(t, err)
+	require.Len(t, documents, 1)
+	assert.Equal(t, bundlePath, documents[0].Path)
+	assert.Equal(t, "metadata {\n  name = \"demo\"\n}\n", documents[0].Text)
+}
+
+func TestFormatWorkspaceRequiresBundle(t *testing.T) {
+	documents, err := Format(t.Context(), t.TempDir())
+
+	require.ErrorIs(t, err, ErrNoBundleDefinitions)
+	assert.Nil(t, documents)
+}
 
 func TestFormatDocument(t *testing.T) {
 	const source = "# 🚀\nmetadata {\nname=\"demo\"\nversion=\"1.0.0\"\n}\n"

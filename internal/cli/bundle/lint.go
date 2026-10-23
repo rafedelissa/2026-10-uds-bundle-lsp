@@ -6,8 +6,6 @@ package bundle
 import (
 	"context"
 	"fmt"
-	"io"
-	"path/filepath"
 	"strings"
 
 	"github.com/defenseunicorns/uds-cli/internal/lsp"
@@ -52,28 +50,11 @@ func NewLintCommand(streams iostreams.IOStreams) *cobra.Command {
 
 // Complete fills in options from command-line arguments.
 func (o *LintOptions) Complete(cmd *cobra.Command, args []string) error {
-	for _, name := range []string{"architecture", "concurrency", "config", "plain-http", "prompt", "skip-tls-verify", "tmp-dir"} {
-		if flag := cmd.Flags().Lookup(name); flag != nil && flag.Changed {
-			return fmt.Errorf("--%s is not supported by bundle lint: %w", name, ErrInvalidArgument)
-		}
-	}
-
-	o.Path = "."
-	if len(args) == 1 {
-		o.Path = args[0]
-		if strings.TrimSpace(o.Path) != "" {
-			o.Path = filepath.Clean(o.Path)
-		}
-	}
-
-	output := ""
-	if flag := cmd.Flags().Lookup("output"); flag != nil {
-		output = flag.Value.String()
-	}
-	format, err := printer.ParseFormat(output)
+	path, format, err := completeSourceOptions(cmd, args, "lint")
 	if err != nil {
 		return err
 	}
+	o.Path = path
 	o.Format = format
 	return nil
 }
@@ -134,24 +115,13 @@ func (o *LintOptions) printResult(result lintResult) error {
 		return p.PrintObj(result, o.Out())
 	}
 	if len(result.Diagnostics) == 0 {
-		return writeLintString(o.Out(), "No issues found.\n")
+		return writeSourceCommandOutput(o.Out(), "No issues found.\n")
 	}
 	for _, item := range result.Diagnostics {
 		line := fmt.Sprintf("%s:%d:%d: %s: %s\n", item.Path, item.Line, item.Column, item.Severity, item.Message)
-		if err := writeLintString(o.Out(), line); err != nil {
+		if err := writeSourceCommandOutput(o.Out(), line); err != nil {
 			return err
 		}
-	}
-	return nil
-}
-
-func writeLintString(out io.Writer, text string) error {
-	written, err := io.WriteString(out, text)
-	if err != nil {
-		return err
-	}
-	if written != len(text) {
-		return io.ErrShortWrite
 	}
 	return nil
 }
