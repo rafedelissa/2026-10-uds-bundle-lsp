@@ -285,7 +285,7 @@ func handleMessage(ctx context.Context, writer *bufio.Writer, msg message, state
 		case "textDocument/documentHighlight":
 			value = documents.highlight(params)
 		default:
-			value = documents.hover(params)
+			value = documents.hover(ctx, params)
 		}
 		result, err := json.Marshal(value)
 		if err != nil {

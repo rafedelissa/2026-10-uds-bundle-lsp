@@ -51,7 +51,7 @@ func (s *documentStore) completeHCLString(doc document, fields []bundle.Definiti
 	if kind := pathCompletionForField(cursor.field); kind != pathCompletionNone {
 		return s.pathCompletions(doc, cursor, kind), true
 	}
-	values := scalarCompletionValues(cursor.field)
+	values := fieldSupportedStringValues(cursor.field)
 	if len(values) == 0 {
 		return completionList{Items: make([]completionItem, 0)}, false
 	}
@@ -197,7 +197,7 @@ func completionFieldAtOffset(body *hclsyntax.Body, fields []bundle.DefinitionFie
 	return bundle.DefinitionField{}, hcl.Range{}, false
 }
 
-func scalarCompletionValues(field bundle.DefinitionField) []string {
+func fieldSupportedStringValues(field bundle.DefinitionField) []string {
 	if field.Type == "dynamic" {
 		return nil
 	}
@@ -224,8 +224,6 @@ func pathCompletionForField(field bundle.DefinitionField) pathCompletionKind {
 		return pathCompletionValues
 	case "tmp_dir":
 		return pathCompletionDirectory
-	case "public_key", "trusted_root":
-		return pathCompletionFile
 	default:
 		return pathCompletionNone
 	}
@@ -418,7 +416,7 @@ func (s *documentStore) expressionCompletions(doc document, body *hclsyntax.Body
 		appendItem("false", "boolean value", "false", completionItemKindKeyword, insertTextFormatPlainText)
 		appendItem("true", "boolean value", "true", completionItemKindKeyword, insertTextFormatPlainText)
 	}
-	for _, value := range scalarCompletionValues(field) {
+	for _, value := range fieldSupportedStringValues(field) {
 		appendItem(value, field.Name+" value", strconv.Quote(value), completionItemKindValue, insertTextFormatPlainText)
 	}
 	sort.Slice(result.Items, func(i, j int) bool { return result.Items[i].Label < result.Items[j].Label })

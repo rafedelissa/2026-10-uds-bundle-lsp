@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/defenseunicorns/uds-cli/internal/bundle"
 	"github.com/hashicorp/hcl/v2"
@@ -216,17 +218,19 @@ func templateCursorAt(text string, offset int) (templateCursor, bool) {
 		return cursor, true
 	}
 
-	start, end := offset, offset
-	for start > 0 && isTemplateIdentifierByte(text[start-1]) {
-		start--
-	}
-	for end < len(text) && isTemplateIdentifierByte(text[end]) {
-		end++
-	}
+	start, end := templateIdentifierBounds(text, offset)
 
 	pathStart := start
-	for pathStart > open+2 && (text[pathStart-1] == '.' || isTemplateIdentifierByte(text[pathStart-1])) {
-		pathStart--
+	for pathStart > open+2 {
+		if text[pathStart-1] == '.' {
+			pathStart--
+			continue
+		}
+		r, size := utf8.DecodeLastRuneInString(text[:pathStart])
+		if !isTemplateIdentifierRune(r) {
+			break
+		}
+		pathStart -= size
 	}
 	prefix := text[pathStart:start]
 	if prefix == "." {
@@ -319,19 +323,46 @@ func templateIndexCursorAt(text string, open, offset int) (templateCursor, bool)
 }
 
 func isTemplateIdentifier(name string) bool {
-	if name == "" || name[0] >= '0' && name[0] <= '9' {
+	if name == "" {
 		return false
 	}
-	for i := range len(name) {
-		if !isTemplateIdentifierByte(name[i]) {
+	for i, r := range name {
+		if !isTemplateIdentifierRune(r) || i == 0 && unicode.IsDigit(r) {
 			return false
 		}
 	}
 	return true
 }
 
-func isTemplateIdentifierByte(value byte) bool {
-	return value == '_' || value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' || value >= '0' && value <= '9'
+func isTemplateIdentifierRune(value rune) bool {
+	return value == '_' || unicode.IsLetter(value) || unicode.IsDigit(value)
+}
+
+func isTemplateIdentifierAt(text string, offset int) bool {
+	if offset < 0 || offset >= len(text) {
+		return false
+	}
+	r, _ := utf8.DecodeRuneInString(text[offset:])
+	return isTemplateIdentifierRune(r)
+}
+
+func templateIdentifierBounds(text string, offset int) (int, int) {
+	start, end := offset, offset
+	for start > 0 {
+		r, size := utf8.DecodeLastRuneInString(text[:start])
+		if !isTemplateIdentifierRune(r) {
+			break
+		}
+		start -= size
+	}
+	for end < len(text) {
+		r, size := utf8.DecodeRuneInString(text[end:])
+		if !isTemplateIdentifierRune(r) {
+			break
+		}
+		end += size
+	}
+	return start, end
 }
 
 // HCL requires nested blocks on their own lines. Account for completion just

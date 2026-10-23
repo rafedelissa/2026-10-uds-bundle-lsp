@@ -20,9 +20,9 @@ func TestValuesFileCompletion(t *testing.T) {
 		wantText string
 	}{
 		{name: "namespace", marked: "replicas: {{ .var| }}\n", want: []string{"vars"}, newText: "vars."},
-		{name: "top level", marked: "replicas: {{ .vars.| }}\n", want: []string{"annotations", "domain", "features", "replicas"}},
+		{name: "top level", marked: "replicas: {{ .vars.| }}\n", want: []string{"annotations", "domain", "features", "replicas", "区域"}},
 		{name: "nested", marked: "audit: {{ .vars.features.| }}\n", want: []string{"audit_logs", "level"}},
-		{name: "trimmed range", marked: "{{- range .vars.| }}\n{{- end }}\n", want: []string{"annotations", "domain", "features", "replicas"}},
+		{name: "trimmed range", marked: "{{- range .vars.| }}\n{{- end }}\n", want: []string{"annotations", "domain", "features", "replicas", "区域"}},
 		{name: "index key", marked: `managedBy: {{ index .vars.annotations "|" }}` + "\n", want: []string{"app.kubernetes.io/managed-by", "team"}, newText: "app.kubernetes.io/managed-by"},
 		{
 			name:     "index key without closing quote",
@@ -175,6 +175,7 @@ package "app" {
 variables = {
   replicas = 2
   domain = "uds.dev"
+  区域 = "west"
   "invalid-key" = true
   annotations = {
     "app.kubernetes.io/managed-by" = "uds"

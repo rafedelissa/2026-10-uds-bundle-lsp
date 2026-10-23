@@ -17,6 +17,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestKeyMaterialDoesNotCompleteAsAPath(t *testing.T) {
+	for _, name := range []string{"public_key", "trusted_root"} {
+		assert.Equal(t, pathCompletionNone, pathCompletionForField(bundle.DefinitionField{Name: name, Type: "string"}))
+	}
+}
+
 func TestBundleCompletionContext(t *testing.T) {
 	tests := []struct {
 		name    string
