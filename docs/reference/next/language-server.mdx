@@ -1,11 +1,31 @@
 ---
-title: Language server diagnostics
-description: Reference local bundle, defaults, config, and values-template diagnostics provided by the UDS language server.
+title: Language server
+description: Reference local bundle diagnostics and navigation provided by the UDS language server.
 sidebar:
   order: 4.600
 ---
 
-The `uds-lsp` executable provides editor diagnostics for Next bundle source files over standard input and output. Configure your editor's LSP client to launch `uds-lsp` and synchronize the bundle HCL files and referenced YAML values files.
+The `uds-lsp` executable provides editor diagnostics and navigation for Next bundle source files over standard input and output. Configure your editor's LSP client to launch `uds-lsp` and synchronize the bundle HCL files and referenced YAML values files.
+
+## Go to definition
+
+Invoke your editor's **Go to Definition** action on a reference:
+
+| Reference | Definition target |
+| --- | --- |
+| `local.name` in a bundle | The local's declaration in the same bundle. |
+| `package.name` in a bundle | The named package block. |
+| A path in a package's `values_files` list | The referenced local file, at its beginning. Relative paths, absolute paths, and expressions using locals or `sys.arch` use the same resolution as diagnostics. |
+| `.vars.name` or `.vars.object.key` in a referenced YAML values template | Matching variable keys in adjacent `config.uds.hcl` and `defaults.uds.hcl`. |
+| `index .vars.labels "app.kubernetes.io/name"` | The quoted key's assignment. Multiple string keys in an `index` call are supported. |
+
+Variable navigation returns all matching assignments, including defaults replaced by config. Results are ordered by owning bundle URI, then config before defaults, and duplicate locations are removed. For a values file shared by multiple bundles, every discovered referencing bundle contributes locations. This shows where a variable is configured; a location in defaults does not imply that its value wins at deployment time.
+
+The server returns a standard LSP definition-location array. Editors can show multiple targets in a picker or peek view; the editor controls this presentation. **Find References** is a separate LSP feature for locating usages and is not provided by this navigation feature.
+
+Navigation uses indexed files on disk with open-buffer overrides, so targets do not need open tabs. Missing or unreadable values files have no navigation target. A computed `values_files` list can return multiple resolved file targets when no individual list item can be identified. Within a path expression, `local.name` still navigates to its local declaration.
+
+Template navigation supports syntactically valid Go templates, explicit `$.vars` root references, `with` object scopes, and simple variable aliases such as `{{ $db := .vars.database }}`. It does not infer individual `range` elements, dynamic index keys, transformed pipeline results, or named-template call contexts. Constant computed HCL objects navigate to their defining expression when no literal key location exists.
 
 ## Local validation
 

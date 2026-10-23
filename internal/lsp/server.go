@@ -281,7 +281,7 @@ func handleMessage(ctx context.Context, writer *bufio.Writer, msg message, state
 		case "textDocument/completion":
 			value = documents.complete(ctx, params)
 		case "textDocument/definition":
-			value = documents.definition(params)
+			value = documents.definition(ctx, params)
 		case "textDocument/documentHighlight":
 			value = documents.highlight(params)
 		default:

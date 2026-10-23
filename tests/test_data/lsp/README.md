@@ -14,6 +14,23 @@ Use this directory as an editor workspace root, with that root supplied through 
 
 The paths in the tables below are relative to this directory. The intentionally broken fixtures are expected to produce errors even with their tabs closed. The table lists each scenario's contribution, rather than the total number of errors when the whole playground is indexed.
 
+To test navigation, invoke your editor's **Go to Definition** action at each location below. Rebuild and restart the language server first. The editor controls whether multiple targets appear as a picker, a peek view, or another navigation UI.
+
+| Location | Expected definition targets |
+| --- | --- |
+| `"values/app.yaml"` in `healthy/bundle.uds.hcl` | The beginning of `healthy/values/app.yaml`. |
+| `"values/arch-${sys.arch}.yaml"` in that bundle, with the cursor on the path text | `healthy/values/arch-amd64.yaml`; change adjacent config's architecture to `arm64` to get the other file. Undo afterward. |
+| `"../shared/common.yaml"` in that bundle | `shared/common.yaml`, outside the bundle directory. |
+| `replicas` in `.vars.replicas` in `healthy/values/app.yaml` | Both assignments: config first, then defaults. |
+| `enabled` in `.vars.enabled` | Only the assignment in defaults. |
+| `host` in `.host` within the `with .vars.database` block | The nested `database.host` key in defaults. |
+| `port` in `.port` within that block | The nested `database.port` keys in config and defaults. |
+| `"app.kubernetes.io/name"` in the `index` action | That quoted key in defaults' `labels` object. |
+| `message` in `shared/per-bundle.yaml`, with both shared bundles closed | The assignment in `shared-a/defaults.uds.hcl`. Add `message` to `shared-b/defaults.uds.hcl` to see both locations, then undo. |
+| `$port.name` inside the `range` block, or `.vars.missing` in an unreferenced file | No UDS definition target. Range elements are not inferred, and values navigation requires a bundle reference. |
+
+Keep target HCL tabs closed to verify disk discovery, then make an unsaved edit to a target key to verify buffer precedence. Definition navigation lists assignments; it does not implement **Find References** for finding variable usages.
+
 | Indexed scenario | Expected UDS diagnostics with the supplied files |
 | --- | --- |
 | [healthy/bundle.uds.hcl](healthy/bundle.uds.hcl) | None. Exercises scalar override, nested merge, list replacement, template control flow, architecture selection, and a file outside the bundle directory. |

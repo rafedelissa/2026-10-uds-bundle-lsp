@@ -42,16 +42,16 @@ package "app" {
 			store := newDocumentStore()
 			store.documents[uri] = document{URI: uri, Text: text}
 
-			result := store.definition(documentPositionParams{
+			result := store.definition(t.Context(), documentPositionParams{
 				TextDocument: textDocumentIdentifier{URI: uri},
 				Position:     &pos,
 			})
 
-			require.NotNil(t, result)
-			assert.Equal(t, uri, result.URI)
-			start, ok := byteAtPosition(text, result.Range.Start)
+			require.Len(t, result, 1)
+			assert.Equal(t, uri, result[0].URI)
+			start, ok := byteAtPosition(text, result[0].Range.Start)
 			require.True(t, ok)
-			end, ok := byteAtPosition(text, result.Range.End)
+			end, ok := byteAtPosition(text, result[0].Range.End)
 			require.True(t, ok)
 			assert.Contains(t, text[start:end], tt.want)
 		})

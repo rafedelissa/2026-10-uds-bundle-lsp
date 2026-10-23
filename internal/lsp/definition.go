@@ -4,6 +4,7 @@
 package lsp
 
 import (
+	"context"
 	"net/url"
 	"path"
 
@@ -19,26 +20,24 @@ type location struct {
 	Range documentRange `json:"range"`
 }
 
-// definition resolves local and package references in an open bundle document.
+// definition resolves bundle references, values paths, and template variables.
 // See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/#textDocument_definition.
-func (s *documentStore) definition(params documentPositionParams) *location {
+func (s *documentStore) definition(ctx context.Context, params documentPositionParams) []location {
 	doc, found := s.document(params.TextDocument.URI)
 	if !found {
 		return nil
 	}
 	body, pos, ok := bundleDocumentContext(doc, *params.Position)
 	if !ok {
-		return nil
+		return s.valuesVariableDefinitions(ctx, doc, *params.Position)
 	}
 	namespace, name, ok := definitionReference(traversalAtPosition(body, pos))
-	if !ok {
-		return nil
+	if ok {
+		if target, found := definitionRange(body, namespace, name); found {
+			return []location{{URI: doc.URI, Range: rangeFromHCL(doc.Text, target)}}
+		}
 	}
-	target, ok := definitionRange(body, namespace, name)
-	if !ok {
-		return nil
-	}
-	return &location{URI: doc.URI, Range: rangeFromHCL(doc.Text, target)}
+	return s.valuesFileDefinitions(ctx, doc, body, pos)
 }
 
 func bundleDocumentContext(doc document, pos position) (*hclsyntax.Body, hcl.Pos, bool) {
