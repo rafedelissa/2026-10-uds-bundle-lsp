@@ -18,11 +18,15 @@ type templateDefinitionScope struct {
 // template keeps text, comments, quoted strings, and changed dot scopes from
 // being mistaken for root variable references.
 func templateVariableAt(text string, offset int) []string {
-	tmpl, err := template.New("values").Parse(text)
+	tmpl, err := parseValuesTemplate(text)
 	if err != nil {
 		return nil
 	}
 	return templateVariableAtTree(tmpl, offset)
+}
+
+func parseValuesTemplate(text string) (*template.Template, error) {
+	return template.New("values").Parse(text)
 }
 
 func templateVariableAtTree(tmpl *template.Template, offset int) []string {
@@ -35,26 +39,32 @@ func templateVariableAtTree(tmpl *template.Template, offset int) []string {
 }
 
 func templateReferencesVariable(text string, names []string) bool {
+	return len(templateVariableReferenceOffsets(text, names)) > 0
+}
+
+func templateVariableReferenceOffsets(text string, names []string) []int {
 	if len(names) == 0 {
-		return false
+		return nil
 	}
-	tmpl, err := template.New("values").Parse(text)
+	tmpl, err := parseValuesTemplate(text)
 	if err != nil {
-		return false
+		return nil
 	}
 	leaf := names[len(names)-1]
 	if leaf == "" {
+		var result []int
 		for offset := range len(text) {
 			if slices.Equal(templateVariableAtTree(tmpl, offset), names) {
-				return true
+				result = append(result, offset)
 			}
 		}
-		return false
+		return result
 	}
 	needles := []string{leaf}
 	if quoted := strconv.Quote(leaf); quoted[1:len(quoted)-1] != leaf {
 		needles = append(needles, quoted[1:len(quoted)-1])
 	}
+	var result []int
 	for _, needle := range needles {
 		for start := 0; start < len(text); {
 			index := strings.Index(text[start:], needle)
@@ -63,12 +73,12 @@ func templateReferencesVariable(text string, names []string) bool {
 			}
 			offset := start + index
 			if slices.Equal(templateVariableAtTree(tmpl, offset), names) {
-				return true
+				result = append(result, offset)
 			}
 			start = offset + len(needle)
 		}
 	}
-	return false
+	return result
 }
 
 func templateListReference(list *parse.ListNode, offset int, scope templateDefinitionScope) []string {
