@@ -156,12 +156,13 @@ func handleMessage(ctx context.Context, writer *bufio.Writer, msg message, state
 		documents.completionContentFormat = hoverContentFormat(params.Capabilities.TextDocument.Completion.CompletionItem.DocumentationFormat)
 		result, err := json.Marshal(initializeResult{
 			Capabilities: serverCapabilities{
-				CompletionProvider:        completionOptions{TriggerCharacters: []string{"{", ".", "\"", "/"}},
-				DefinitionProvider:        true,
-				DocumentHighlightProvider: true,
-				HoverProvider:             true,
-				PositionEncoding:          "utf-16",
-				RenameProvider:            true,
+				CompletionProvider:         completionOptions{TriggerCharacters: []string{"{", ".", "\"", "/"}},
+				DefinitionProvider:         true,
+				DocumentFormattingProvider: true,
+				DocumentHighlightProvider:  true,
+				HoverProvider:              true,
+				PositionEncoding:           "utf-16",
+				RenameProvider:             true,
 				Workspace: workspaceCapabilities{WorkspaceFolders: workspaceFolderCapabilities{
 					Supported: true, ChangeNotifications: true,
 				}},
@@ -245,6 +246,26 @@ func handleMessage(ctx context.Context, writer *bufio.Writer, msg message, state
 		documents.changeWorkspaceFolders(params)
 		documents.reindexWorkspace(ctx, streams)
 		return false, state, documents.refreshDiagnostics(ctx, writer)
+	case "textDocument/formatting":
+		if msg.ID == nil {
+			return false, state, nil
+		}
+		if state != stateInitialized {
+			return false, state, writeError(writer, msg.ID, codeServerNotInitialized, "server not initialized")
+		}
+		var params formattingParams
+		if err := json.Unmarshal(msg.Params, &params); err != nil || params.TextDocument.URI == "" {
+			return false, state, writeError(writer, msg.ID, codeInvalidParams, "invalid document formatting parameters")
+		}
+		edits, err := documents.formatDocument(params)
+		if err != nil {
+			return false, state, writeError(writer, msg.ID, codeInvalidParams, err.Error())
+		}
+		result, err := json.Marshal(edits)
+		if err != nil {
+			return false, state, fmt.Errorf("encode formatting result: %w", err)
+		}
+		return false, state, writeResult(writer, msg.ID, result)
 	case "textDocument/rename":
 		if msg.ID == nil {
 			return false, state, nil

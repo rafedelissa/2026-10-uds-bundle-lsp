@@ -85,14 +85,15 @@ type clientInfo struct {
 }
 
 type serverCapabilities struct {
-	CompletionProvider        completionOptions       `json:"completionProvider"`
-	DefinitionProvider        bool                    `json:"definitionProvider"`
-	DocumentHighlightProvider bool                    `json:"documentHighlightProvider"`
-	HoverProvider             bool                    `json:"hoverProvider"`
-	PositionEncoding          string                  `json:"positionEncoding"`
-	RenameProvider            bool                    `json:"renameProvider"`
-	TextDocumentSync          textDocumentSyncOptions `json:"textDocumentSync"`
-	Workspace                 workspaceCapabilities   `json:"workspace"`
+	CompletionProvider         completionOptions       `json:"completionProvider"`
+	DefinitionProvider         bool                    `json:"definitionProvider"`
+	DocumentFormattingProvider bool                    `json:"documentFormattingProvider"`
+	DocumentHighlightProvider  bool                    `json:"documentHighlightProvider"`
+	HoverProvider              bool                    `json:"hoverProvider"`
+	PositionEncoding           string                  `json:"positionEncoding"`
+	RenameProvider             bool                    `json:"renameProvider"`
+	TextDocumentSync           textDocumentSyncOptions `json:"textDocumentSync"`
+	Workspace                  workspaceCapabilities   `json:"workspace"`
 }
 
 type workspaceFolder struct {
