@@ -76,7 +76,36 @@ hk install
 
 Use the repository's UDS Runner tasks to build and validate UDS CLI. After mise is activated, the pinned bootstrap UDS CLI is available on your `PATH`.
 
-To build a local binary, run `uds run build`. This creates `build/uds`. Use `uds run --list-all` for platform-specific and release builds; CI uses `uds run build-cli-linux-amd`.
+To build local binaries, run `uds run build`. This creates `build/uds` and
+`build/uds-lsp`. Use `uds run --list-all` for platform-specific and release
+builds; CI uses `uds run build-cli-linux-amd`.
+
+For VS Code extension development, run these tasks from the repository root:
+
+```console
+uds run build-lsp
+uds run build-vscode-extension
+```
+
+`build-lsp` builds only `build/uds-lsp`. `build-vscode-extension` installs the
+locked npm dependencies, checks types and lint, bundles the client, and creates
+`build/uds-lsp-extension.vsix`. The VSIX includes the client and repository
+license; it requires a separately installed `uds-lsp` executable.
+
+To debug the client, open `vscode-extension/` as a VS Code folder, install its
+recommended development extensions, and press F5. The launch task rebuilds the
+LSP and starts the client watchers. Its environment adds the repository's
+`build/` directory to `PATH`, so the default `udsLsp.serverPath` of `uds-lsp`
+uses the local build. Reset any explicit `udsLsp.serverPath` override to use
+this development setup. Open the
+[LSP validation playground](tests/test_data/lsp/README.md) in the Extension
+Development Host to exercise diagnostics.
+
+After changing Go code, run `uds run build-lsp` and use **UDS LSP: Restart Server**
+in the Extension Development Host. These launch settings debug the TypeScript
+client; debugging the Go server requires a separate Go debugger session.
+See the [extension README](vscode-extension/README.md) for VSIX installation
+and consumer configuration.
 
 ### Hooks and linting
 

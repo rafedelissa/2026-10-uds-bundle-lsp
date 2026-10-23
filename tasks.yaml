@@ -24,6 +24,20 @@ tasks:
       - task: build-args
       - cmd: go build -mod=mod -ldflags="${BUILD_ARGS}" -o build/uds ./cmd/uds && go build -mod=mod -ldflags="${BUILD_ARGS}" -o build/uds-lsp ./cmd/uds-lsp
 
+  - name: build-lsp
+    description: build the local UDS language server for extension development
+    actions:
+      - cmd: mkdir -p build
+      - cmd: go build -mod=mod -o build/uds-lsp ./cmd/uds-lsp
+
+  - name: build-vscode-extension
+    description: package the VS Code client as build/uds-lsp-extension.vsix
+    actions:
+      - cmd: mkdir -p build
+      - cmd: cp LICENSE vscode-extension/LICENSE
+      - cmd: npm --prefix vscode-extension ci
+      - cmd: npm --prefix vscode-extension run package:vsix
+
   - name: lint
     description: run repository lint checks
     actions:

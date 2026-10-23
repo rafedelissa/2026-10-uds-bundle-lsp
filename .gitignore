@@ -7,6 +7,12 @@
 .release-downloads/
 .scratch/
 .vscode/
+# Share extension development configuration.
+!/vscode-extension/.vscode/
+/vscode-extension/.vscode/*
+!/vscode-extension/.vscode/extensions.json
+!/vscode-extension/.vscode/launch.json
+!/vscode-extension/.vscode/tasks.json
 .zarf*
 *.bak
 *.key
