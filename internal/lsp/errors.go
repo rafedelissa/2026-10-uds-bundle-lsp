@@ -5,5 +5,9 @@ package lsp
 
 import "errors"
 
-// ErrExitBeforeShutdown indicates that a client sent exit without first sending shutdown.
-var ErrExitBeforeShutdown = errors.New("LSP client exited before shutdown")
+var (
+	// ErrExitBeforeShutdown indicates that a client sent exit without first sending shutdown.
+	ErrExitBeforeShutdown = errors.New("LSP client exited before shutdown")
+	// ErrNoBundleDefinitions indicates that a lint workspace contains no bundle definitions.
+	ErrNoBundleDefinitions = errors.New("no bundle.uds.hcl files found")
+)
