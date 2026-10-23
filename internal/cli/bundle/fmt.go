@@ -22,6 +22,7 @@ import (
 type FmtOptions struct {
 	Path   string
 	Format printer.Format
+	Check  bool
 
 	iostreams.IOStreams
 }
@@ -34,7 +35,7 @@ func NewFmtOptions(streams iostreams.IOStreams) *FmtOptions {
 // NewFmtCommand creates the fmt command.
 func NewFmtCommand(streams iostreams.IOStreams) *cobra.Command {
 	o := NewFmtOptions(streams)
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "fmt [directory]",
 		Short: "Format UDS bundle source files",
 		Long:  "Format UDS bundle HCL files using the same canonical formatter as the UDS language server.",
@@ -49,6 +50,8 @@ func NewFmtCommand(streams iostreams.IOStreams) *cobra.Command {
 			return o.Run(cmd.Context())
 		},
 	}
+	cmd.Flags().BoolVar(&o.Check, "check", false, "Check formatting without writing changes")
+	return cmd
 }
 
 // Complete fills in options from command-line arguments.
@@ -80,27 +83,38 @@ func (o *FmtOptions) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("resolve format path %q: %w", o.Path, err)
 	}
+	paths := make([]string, 0, len(documents))
 	for _, doc := range documents {
-		if err := verifyFormatSource(doc.Path, doc.OriginalText); err != nil {
-			return err
-		}
-	}
-	result := fmtResult{Formatted: make([]string, 0, len(documents))}
-	for _, doc := range documents {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if err := writeFormattedDocument(doc); err != nil {
-			return err
-		}
 		relative, err := filepath.Rel(root, doc.Path)
 		if err != nil {
 			relative = doc.Path
 		}
-		result.Formatted = append(result.Formatted, filepath.ToSlash(relative))
+		paths = append(paths, filepath.ToSlash(relative))
 	}
-	if err := o.printResult(result); err != nil {
+	if !o.Check {
+		for _, doc := range documents {
+			if err := verifyFormatSource(doc.Path, doc.OriginalText); err != nil {
+				return err
+			}
+		}
+		for _, doc := range documents {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if err := writeFormattedDocument(doc); err != nil {
+				return err
+			}
+		}
+	}
+	if err := o.printResult(paths); err != nil {
 		return fmt.Errorf("print format result: %w", err)
+	}
+	if o.Check && len(documents) > 0 {
+		file := "files"
+		if len(documents) == 1 {
+			file = "file"
+		}
+		return fmt.Errorf("format check found %d unformatted %s: %w", len(documents), file, ErrFormatCheckFailed)
 	}
 	return nil
 }
@@ -187,19 +201,30 @@ type fmtResult struct {
 	Formatted []string `json:"formatted" yaml:"formatted"`
 }
 
-func (o *FmtOptions) printResult(result fmtResult) error {
+type fmtCheckResult struct {
+	Unformatted []string `json:"unformatted" yaml:"unformatted"`
+}
+
+func (o *FmtOptions) printResult(paths []string) error {
 	if o.Format != printer.FormatText {
 		p, err := printer.NewPrinter(o.Format)
 		if err != nil {
 			return err
 		}
-		return p.PrintObj(result, o.Out())
+		if o.Check {
+			return p.PrintObj(fmtCheckResult{Unformatted: paths}, o.Out())
+		}
+		return p.PrintObj(fmtResult{Formatted: paths}, o.Out())
 	}
-	if len(result.Formatted) == 0 {
+	if len(paths) == 0 {
 		return writeSourceCommandOutput(o.Out(), "No formatting changes required.\n")
 	}
-	for _, path := range result.Formatted {
-		if err := writeSourceCommandOutput(o.Out(), "Formatted "+path+"\n"); err != nil {
+	verb := "Formatted "
+	if o.Check {
+		verb = "Would format "
+	}
+	for _, path := range paths {
+		if err := writeSourceCommandOutput(o.Out(), verb+path+"\n"); err != nil {
 			return err
 		}
 	}

@@ -26,7 +26,7 @@ func TestLintCommand_Integration(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, bundle.BundleFileName), []byte(`package "app" {`), 0o600))
 
-	output, err := executeCLI(t, "", "bundle", "lint", root)
+	output, err := executeCLI(t, "", "bundle", "lint", root, "--check")
 
 	require.Error(t, err)
 	assert.Contains(t, output, "bundle.uds.hcl:1:")

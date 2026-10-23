@@ -15,6 +15,7 @@ var (
 	ErrParseBundle           = errors.New("parsing bundle")
 	ErrInvalidBundle         = errors.New("invalid bundle")
 	ErrLintFailed            = errors.New("bundle lint failed")
+	ErrFormatCheckFailed     = errors.New("bundle format check failed")
 	ErrFormatConflict        = errors.New("source changed during formatting")
 	ErrForceRequired         = errors.New("operation requires force")
 	ErrPullBundle            = errors.New("pulling bundle")
