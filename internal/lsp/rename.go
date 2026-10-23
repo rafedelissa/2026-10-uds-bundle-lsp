@@ -4,6 +4,7 @@
 package lsp
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
@@ -33,9 +34,9 @@ type renameTarget struct {
 	references  []hcl.Range
 }
 
-// rename returns edits for a local or package declaration and all of its references.
+// rename returns edits for a local, package, or values variable and all of its references.
 // See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/#textDocument_rename.
-func (s *documentStore) rename(params renameParams) (*workspaceEdit, error) {
+func (s *documentStore) rename(ctx context.Context, params renameParams) (*workspaceEdit, error) {
 	if !hclsyntax.ValidIdentifier(params.NewName) {
 		return nil, fmt.Errorf("new name %q is not a valid HCL identifier", params.NewName)
 	}
@@ -43,6 +44,9 @@ func (s *documentStore) rename(params renameParams) (*workspaceEdit, error) {
 	doc, found := s.document(params.TextDocument.URI)
 	if !found {
 		return nil, fmt.Errorf("document %q is not open", params.TextDocument.URI)
+	}
+	if edit, variable, err := s.renameVariable(ctx, doc, *params.Position, params.NewName); variable {
+		return edit, err
 	}
 	body, pos, ok := bundleDocumentContext(doc, *params.Position)
 	if !ok {

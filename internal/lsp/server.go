@@ -256,7 +256,7 @@ func handleMessage(ctx context.Context, writer *bufio.Writer, msg message, state
 		if err := json.Unmarshal(msg.Params, &params); err != nil || params.TextDocument.URI == "" || params.Position == nil || params.Position.Line < 0 || params.Position.Character < 0 {
 			return false, state, writeError(writer, msg.ID, codeInvalidParams, "invalid rename parameters")
 		}
-		edit, err := documents.rename(params)
+		edit, err := documents.rename(ctx, params)
 		if err != nil {
 			return false, state, writeError(writer, msg.ID, codeInvalidParams, err.Error())
 		}
