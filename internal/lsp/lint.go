@@ -6,12 +6,8 @@ package lsp
 import (
 	"cmp"
 	"context"
-	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
-
-	"github.com/defenseunicorns/uds-cli/internal/bundle"
 )
 
 const (
@@ -32,32 +28,9 @@ type LintDiagnostic struct {
 
 // Lint scans a bundle workspace using the same diagnostics engine as the language server.
 func Lint(ctx context.Context, root string) ([]LintDiagnostic, error) {
-	root, err := filepath.Abs(root)
+	root, store, err := indexBundleWorkspace(ctx, root, "lint")
 	if err != nil {
-		return nil, fmt.Errorf("resolve lint path %q: %w", root, err)
-	}
-	info, err := os.Stat(root)
-	if err != nil {
-		return nil, fmt.Errorf("access lint path %q: %w", root, err)
-	}
-	if !info.IsDir() {
-		return nil, fmt.Errorf("lint path %q is not a directory", root)
-	}
-
-	store := newDocumentStore()
-	store.initializeWorkspace(initializeParams{WorkspaceFolders: []workspaceFolder{{URI: localFileURI(root)}}})
-	if err := store.indexWorkspace(ctx); err != nil {
-		return nil, fmt.Errorf("index lint workspace %q: %w", root, err)
-	}
-	foundBundle := false
-	for filename := range store.workspaceFiles {
-		if filepath.Base(filename) == bundle.BundleFileName {
-			foundBundle = true
-			break
-		}
-	}
-	if !foundBundle {
-		return nil, fmt.Errorf("lint workspace %q: %w", root, ErrNoBundleDefinitions)
+		return nil, err
 	}
 
 	workspaceResults := store.workspaceDiagnostics(ctx)

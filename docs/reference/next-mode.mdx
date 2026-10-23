@@ -187,6 +187,8 @@ Use these commands to create, inspect, transfer, deploy, and manage Next-mode bu
 | Command | Description |
 | --- | --- |
 | `uds bundle create [directory]` | Create a bundle artifact from a directory containing `bundle.uds.hcl`. |
+| `uds bundle fmt [directory]` | Format bundle HCL files. Defaults to the current directory. |
+| `uds bundle lint [directory]` | Check bundle source files and referenced values files. Defaults to the current directory. |
 | `uds bundle inspect <bundle-reference>` | Display metadata and packages from a local `.tar.zst` or OCI bundle artifact. |
 | `uds bundle push <bundle-tarball> <oci-reference>` | Push a bundle artifact to an OCI registry. |
 | `uds bundle pull <ref>` | Pull a bundle artifact from an OCI registry. |
@@ -200,7 +202,7 @@ Use these commands to create, inspect, transfer, deploy, and manage Next-mode bu
 
 ### Global bundle flags
 
-These flags apply to all `uds bundle` subcommands:
+These flags are defined on `uds bundle`; each subcommand uses the flags that apply to its operation:
 
 | Flag | Default | Description |
 | --- | --- | --- |
@@ -215,6 +217,26 @@ These flags apply to all `uds bundle` subcommands:
 
 > [!NOTE]
 > `--plain-http` does not force HTTP. It allows HTTP only after confirming a registry does not support HTTPS.
+
+### Formatting bundle source
+
+Format `bundle.uds.hcl`, `config.uds.hcl`, and `defaults.uds.hcl` files throughout a bundle workspace:
+
+```bash
+CLI_FEATURES=NextMode=true uds bundle fmt ./my-bundle
+```
+
+The command uses the same canonical HCL formatter as the language server and writes changed files in place. It prints each changed path, or `No formatting changes required.` when the workspace is already formatted. Use `--output json` or `--output yaml` for structured output. The command returns an error if the directory contains no `bundle.uds.hcl` file and rejects bundle operation flags such as `--architecture` and `--config`. Referenced YAML values files are not formatted.
+
+### Linting bundle source
+
+Run the same workspace diagnostics used by the UDS language server before creating or deploying a bundle:
+
+```bash
+CLI_FEATURES=NextMode=true uds bundle lint ./my-bundle
+```
+
+The command checks `bundle.uds.hcl`, adjacent `config.uds.hcl` and `defaults.uds.hcl` files, and referenced YAML values files. It returns an error if the directory contains no `bundle.uds.hcl` file. Text output uses `path:line:column: severity: message` and prints `No issues found.` when the workspace is clean. Use `--output json` or `--output yaml` for structured output. The command rejects bundle operation flags such as `--architecture` and `--config` rather than silently ignoring them. It returns an error when any error-level diagnostic is present; warnings do not cause failure.
 
 ## Deploying a bundle
 

@@ -31,6 +31,7 @@ func NewBundleCommand(streams iostreams.IOStreams) *cobra.Command {
 
 	// Add subcommands
 	bundleCmd.AddCommand(NewInspectCommand(streams))
+	bundleCmd.AddCommand(NewFmtCommand(streams))
 	bundleCmd.AddCommand(NewLintCommand(streams))
 	bundleCmd.AddCommand(NewCreateCommand(streams))
 	bundleCmd.AddCommand(NewPushCommand(streams))

@@ -52,6 +52,31 @@ func (s *documentStore) changeWorkspaceFolders(params changeWorkspaceFoldersPara
 	}
 }
 
+func indexBundleWorkspace(ctx context.Context, root, operation string) (string, *documentStore, error) {
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return "", nil, fmt.Errorf("resolve %s path %q: %w", operation, root, err)
+	}
+	info, err := os.Stat(root)
+	if err != nil {
+		return "", nil, fmt.Errorf("access %s path %q: %w", operation, root, err)
+	}
+	if !info.IsDir() {
+		return "", nil, fmt.Errorf("%s path %q is not a directory", operation, root)
+	}
+	store := newDocumentStore()
+	store.initializeWorkspace(initializeParams{WorkspaceFolders: []workspaceFolder{{URI: localFileURI(root)}}})
+	if err := store.indexWorkspace(ctx); err != nil {
+		return "", nil, fmt.Errorf("index %s workspace %q: %w", operation, root, err)
+	}
+	for filename := range store.workspaceFiles {
+		if filepath.Base(filename) == bundle.BundleFileName {
+			return root, store, nil
+		}
+	}
+	return "", nil, fmt.Errorf("%s workspace %q: %w", operation, root, ErrNoBundleDefinitions)
+}
+
 // Scan only editor-selected roots. References from discovered bundles still
 // support author-selected files outside those roots, as local authoring does.
 // The index stores paths; sourceDocument overlays current editor buffers when

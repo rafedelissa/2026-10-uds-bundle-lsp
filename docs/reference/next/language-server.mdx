@@ -1,11 +1,11 @@
 ---
 title: Language server
-description: Reference local bundle diagnostics and navigation provided by the UDS language server.
+description: Reference local bundle diagnostics, navigation, and formatting provided by the UDS language server.
 sidebar:
   order: 4.600
 ---
 
-The `uds-lsp` executable provides editor diagnostics and navigation for Next bundle source files over standard input and output. Configure your editor's LSP client to launch `uds-lsp` and synchronize the bundle HCL files and referenced YAML values files.
+The `uds-lsp` executable provides editor diagnostics, navigation, and formatting for Next bundle source files over standard input and output. Configure your editor's LSP client to launch `uds-lsp` and synchronize the bundle HCL files and referenced YAML values files.
 
 ## Go to definition
 
@@ -26,6 +26,12 @@ The server returns a standard LSP definition-location array. Editors can show mu
 Navigation uses indexed files on disk with open-buffer overrides, so targets do not need open tabs. Missing or unreadable values files have no navigation target. A computed `values_files` list can return multiple resolved file targets when no individual list item can be identified. Within a path expression, `local.name` still navigates to its local declaration.
 
 Template navigation supports syntactically valid Go templates, explicit `$.vars` root references, `with` object scopes, and simple variable aliases such as `{{ $db := .vars.database }}`. It does not infer individual `range` elements, dynamic index keys, transformed pipeline results, or named-template call contexts. Constant computed HCL objects navigate to their defining expression when no literal key location exists.
+
+## Formatting
+
+Invoke your editor's **Format Document** action to apply canonical HCL whitespace to `bundle.uds.hcl`, `config.uds.hcl`, or `defaults.uds.hcl`. Formatting uses the standard HCL formatter, including for partial source with syntax errors, and ignores client tab-size settings. The server returns no edits when the document is already formatted.
+
+Referenced YAML values files and unrelated HCL files are not formatted.
 
 ## Local validation
 

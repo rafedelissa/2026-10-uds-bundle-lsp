@@ -3,7 +3,7 @@
 
 // Package lsp implements the Language Server Protocol transport, lifecycle,
 // document synchronization, diagnostics, hover, completion, definition lookup,
-// document highlights, rename, and values-file completion for Next bundles.
+// document highlights, formatting, rename, and values-file completion for Next bundles.
 // Local diagnostics cover referenced values files and adjacent defaults/config,
 // including Go template execution against their merged variables.
 package lsp

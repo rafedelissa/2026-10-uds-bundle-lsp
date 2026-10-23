@@ -210,6 +210,48 @@ func ValidateArtifactReference(ref string) error {
 	return fmt.Errorf("expected a local .tar.zst bundle artifact or OCI reference, got: %s: %w", ref, ErrUnsupportedSource)
 }
 
+func writeSourceCommandOutput(out io.Writer, text string) error {
+	written, err := io.WriteString(out, text)
+	if err != nil {
+		return err
+	}
+	if written != len(text) {
+		return io.ErrShortWrite
+	}
+	return nil
+}
+
+func completeSourceOptions(cmd *cobra.Command, args []string, operation string) (string, printer.Format, error) {
+	if err := rejectUnsupportedSourceFlags(cmd, operation); err != nil {
+		return "", "", err
+	}
+	path := "."
+	if len(args) == 1 {
+		path = args[0]
+		if strings.TrimSpace(path) != "" {
+			path = filepath.Clean(path)
+		}
+	}
+	output := ""
+	if flag := cmd.Flags().Lookup("output"); flag != nil {
+		output = flag.Value.String()
+	}
+	format, err := printer.ParseFormat(output)
+	if err != nil {
+		return "", "", err
+	}
+	return path, format, nil
+}
+
+func rejectUnsupportedSourceFlags(cmd *cobra.Command, operation string) error {
+	for _, name := range []string{"architecture", "concurrency", "config", "plain-http", "prompt", "skip-tls-verify", "tmp-dir"} {
+		if flag := cmd.Flags().Lookup(name); flag != nil && flag.Changed {
+			return fmt.Errorf("--%s is not supported by bundle %s: %w", name, operation, ErrInvalidArgument)
+		}
+	}
+	return nil
+}
+
 // ResolvePrinter resolves the --output flag into a ResourcePrinter.
 // This centralizes the printer resolution logic shared by all bundle commands.
 func ResolvePrinter(cmd *cobra.Command) (printer.ResourcePrinter, error) {
