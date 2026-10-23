@@ -34,6 +34,7 @@ Keep target HCL tabs closed to verify disk discovery, then make an unsaved edit 
 | Indexed scenario | Expected UDS diagnostics with the supplied files |
 | --- | --- |
 | [healthy/bundle.uds.hcl](healthy/bundle.uds.hcl) | None. Exercises scalar override, nested merge, list replacement, template control flow, architecture selection, and a file outside the bundle directory. |
+| [missing-required/bundle.uds.hcl](missing-required/bundle.uds.hcl) | Three errors: missing `uds` block, missing `metadata.name`, and missing package `source`. |
 | [broken-paths/bundle.uds.hcl](broken-paths/bundle.uds.hcl) | Two errors on `values_files`: a missing file and a directory named `directory.yaml`. |
 | [broken-values/bundle.uds.hcl](broken-values/bundle.uds.hcl) | One diagnostic in each of eight broken values files; none in `unexecuted-branch.yaml`. |
 | [invalid-config/bundle.uds.hcl](invalid-config/bundle.uds.hcl) | One nested-null error in config and one template syntax error in `values/syntax-error.yaml`. Execution of `values/needs-variable.yaml` is suppressed. |
@@ -43,6 +44,18 @@ Keep target HCL tabs closed to verify disk discovery, then make an unsaved edit 
 | [standalone/defaults.uds.hcl](standalone/defaults.uds.hcl) | Unexpected `options` block, without needing a bundle. |
 | [standalone/config.uds.hcl](standalone/config.uds.hcl) | `concurrency` requires a number, without needing a bundle. |
 | [unreferenced.yaml](unreferenced.yaml) | None: no bundle references this file. |
+
+## Missing required blocks and fields
+
+Open [missing-required/bundle.uds.hcl](missing-required/bundle.uds.hcl). Its empty
+metadata and package blocks intentionally omit required attributes, and it has
+no `uds` block. Expect three diagnostics. Add a `uds` block with
+`bundle_api_version = "uds.dev/v1alpha1"`, `name = "lsp-missing-required"` inside
+metadata, and `source = "oci://example.invalid/lsp/demo:0.0.0"` inside the package.
+All three diagnostics should clear without saving. Undo the edits to restore
+the fixture. The placeholder source is never fetched by the LSP.
+
+## Additional diagnostic checks
 
 For merge and template checks, start with the healthy bundle:
 

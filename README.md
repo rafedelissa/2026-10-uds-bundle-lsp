@@ -1,54 +1,168 @@
-# UDS-CLI
+# UDS language server
 
-[![Latest Release](https://img.shields.io/github/v/release/defenseunicorns/uds-cli)](https://github.com/defenseunicorns/uds-cli/releases)
-[![Go version](https://img.shields.io/github/go-mod/go-version/defenseunicorns/uds-cli?filename=go.mod)](https://go.dev/)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/defenseunicorns/uds-cli/release.yaml)](https://github.com/defenseunicorns/uds-cli/actions/workflows/release.yaml)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/defenseunicorns/uds-cli/badge)](https://api.securityscorecards.dev/projects/github.com/defenseunicorns/uds-cli)
+Editor support for UDS CLI Next bundles — an October 2026 Dash Days experiment.
 
-UDS CLI is the command-line DevX for interacting with the [UDS ecosystem](https://docs.defenseunicorns.com/). It is the primary way to interact with UDS workflows from a terminal, including bundle authoring, artifact creation, deployment, publishing, cluster operations, task automation, and access to the UDS-adjacent tooling needed to operate the platform.
+`uds-lsp` brings live validation, completion, navigation, and refactoring to
+`bundle.uds.hcl`, `defaults.uds.hcl`, `config.uds.hcl`, and referenced YAML values
+templates. It comes bundled with a **VS Code extension** and also works with
+**Neovim's built-in LSP client**.
 
-> UDS CLI currently supports Legacy and Next modes. Legacy remains the default while Next matures as an alpha preview. See [CLI Modes](#cli-modes) for details.
+## Why this project exists
 
-## Install
-Recommended installation method is with Brew:
-```
-brew trust --formula defenseunicorns/tap/uds && brew tap defenseunicorns/tap && brew install uds
-```
-UDS CLI binaries are also included with each [Github Release](https://github.com/defenseunicorns/uds-cli/releases)
+- **Problem:** Moving bundle authoring from YAML to HCL means rebuilding the
+  editor support bundle authors rely on. Finding mistakes by editing a file and
+  then running bundle creation slows the feedback loop.
+- **Approach:** Reuse the [CLI Next parser](internal/bundle/bundle.go) and
+  expose bundle-aware assistance through a language server, so editors can
+  understand UDS fields, references, and variable context.
+- **Outcome:** Authors get diagnostics as they type, including errors across HCL
+  and values templates, plus completion, hover information, navigation, rename,
+  and formatting in their editor.
+- **Mission value:** Catch bundle configuration mistakes earlier and reduce
+  repeated CLI validation cycles, helping platform and delivery engineers spend
+  more time preparing deployable software and less time tracking down authoring
+  errors.
 
-### Snapshot prereleases
+  - **AI-assisted workflows:** The same diagnostics can give workflows such as
+    Ark early feedback during bundle authoring, helping them correct mistakes
+    before bundle creation or deployment. Agents without LSP support can use
+    `bundle lint` and `bundle fmt` for validation and formatting through the CLI.
 
-The `Snapshot Release` workflow runs daily at 03:00 UTC against `main`; manual dispatches also build only `main`. Successful runs publish a GitHub prerelease tagged `vX.Y.Z-snapshot+YYYYMMDDHHMMSS-XXXXXXXX`, where `vX.Y.Z` is the latest stable tag and `XXXXXXXX` is the source commit's eight-character SHA. Each prerelease contains Linux and macOS binaries for amd64 and arm64, Linux DEB/RPM packages, SHA-256 checksums, and per-binary SBOMs.
+This repository contains the experimental LSP alongside the UDS CLI source it
+builds on. The editor setup below runs locally without a cluster or registry
+credentials.
 
-Snapshots do not update Homebrew or become the latest release. Scheduled cleanup retains the newest three snapshot prereleases and preserves their tags.
+## Features
 
-## Build language server artifacts
+| Feature | What you get |
+| --- | --- |
+| [Live diagnostics](docs/reference/next/language-server.mdx#local-validation) | HCL syntax, evaluation, bundle constraints, dependency errors, missing values files, and Go template failures using merged defaults/config variables. Unsaved edits take precedence over disk. |
+| [Hover information](internal/lsp/hover.go) | Field documentation and context for expressions, variables, and `file()` calls. |
+| [Completion](NEOVIM.md#configure-completion) | UDS fields and blocks, local/package references, built-in expressions, local file paths, and `.vars` keys in referenced values templates. |
+| [Go to definition](docs/reference/next/language-server.mdx#go-to-definition) | Jump to locals, package declarations, values files, and variable assignments in defaults/config. |
+| [Rename](internal/lsp/rename.go) | Rename locals and packages with their references, or variables across defaults, config, and referenced values templates. Ambiguous shared-template renames are rejected. |
+| [Document highlights](internal/lsp/highlight.go) | Highlight local and package declarations and references in the current bundle. |
+| [Formatting](docs/reference/next/language-server.mdx#formatting) | Apply canonical HCL whitespace to the three UDS HCL source files. |
 
-With the [development tools](CONTRIBUTING.md#set-up-the-development-environment)
-installed and mise activated, run these commands from the repository root:
+The server also [discovers bundles across the workspace](docs/reference/next/language-server.mdx#workspace-discovery),
+so diagnostics and navigation work with unopened files and shared values
+templates. Both editor integrations use the same server.
+
+## CLI lint and format
+
+The CLI exposes the same diagnostics and HCL formatter for terminal and CI
+workflows:
 
 ```sh
-uds run build-lsp-all
-uds run build-vscode-extension-all
+CLI_FEATURES=NextMode=true uds bundle lint tests/test_data/lsp/healthy
+CLI_FEATURES=NextMode=true uds bundle fmt --check tests/test_data/lsp/healthy
+CLI_FEATURES=NextMode=true uds bundle fmt tests/test_data/lsp/healthy
 ```
 
-The first task creates standalone LSP executables for macOS, Linux, and Windows
-on amd64 and arm64, plus `build/lsp-checksums.txt`. The second packages each
-matching server in a platform-specific VSIX and retains the standalone files.
-`uds run build-all` also includes the LSP binaries alongside the existing CLI
-artifacts. See [Contributing](CONTRIBUTING.md#building-the-app) for artifact names,
-target selection, and checksums.
+- [`bundle lint`](internal/cli/bundle/lint.go) checks saved bundle source and referenced values templates, reporting diagnostics with file locations. Errors cause a nonzero exit; `--check` fails on any diagnostic.
+- [`bundle fmt`](internal/cli/bundle/fmt.go) formats UDS HCL files in the selected directory. `--check` reports needed changes without writing files and exits nonzero if any are found.
 
-## Official Documentation
-Official documentation is located at [docs.defenseunicorns.com/cli/](https://docs.defenseunicorns.com/cli/)
+Both commands default to the current directory and support `--output json` or
+`--output yaml`. AI agents without LSP support can also run these commands to
+check and format bundles, using structured output and exit codes to guide fixes
+during authoring.
 
-## Quickstart
+## Connecting your editor
 
-UDS CLI Next uses `bundle.uds.hcl` bundle definitions. This example creates a local k3d cluster with the UDS k3d package, initializes Zarf, and deploys podinfo.
+Use a [pre-built binary](#download-pre-built-binaries), or build from a
+checkout of this repository. For source builds, install and
+activate the [repository's development tools](CONTRIBUTING.md#set-up-the-development-environment)
+with mise; they provide Go, Node.js/npm, and the bootstrap `uds` task runner.
+Run the commands below from the repository root.
 
-Prerequisites: Docker and k3d must be installed and running.
+### Download pre-built binaries
 
-Create `bundle.uds.hcl`:
+Skip building from source by downloading the pre-built binary matching your platform
+from [this repository's releases](https://github.com/defenseunicorns-dashdays/2026-10-uds-bundle-lsp/releases):
+
+- **VS Code extension:** `uds-lsp-extension-<target>.vsix`, including its server (for example, `uds-lsp-extension-darwin-arm64.vsix`).
+- **Standalone LSP:** `uds-lsp-<os>-<arch>` (plus `.exe` on Windows), for Neovim and other editors.
+- **CLI:** A platform-specific `uds` executable, such as `uds-mac-apple`, with the lint and format commands.
+
+Pre-built binaries need no Go or Node.js toolchain. Keep a checkout for the
+playground examples, and give downloaded executables permission to run on
+macOS/Linux with `chmod +x`.
+
+### VS Code
+
+Use VS Code **1.140.0 or later**. If building from source, run:
+
+```sh
+uds run build-vscode-extension
+```
+
+In VS Code, run **Extensions: Install from VSIX...** and select the downloaded
+`uds-lsp-extension-<target>.vsix` (or the generated file under `build/`). The [extension installation guide](vscode-extension/README.md#install)
+lists platform targets and remote workspace instructions. The VSIX bundles the
+server, so installing a built package needs no separate Go toolchain or server
+setup. Leave `udsLsp.serverPath` empty to use it.
+
+Open the healthy example as a workspace:
+
+```sh
+code tests/test_data/lsp/healthy
+```
+
+Open `bundle.uds.hcl` to activate the extension. See the
+[extension README](vscode-extension/README.md) for settings and the F5
+development workflow.
+
+### Neovim
+
+Use Neovim **0.11 or later**. If building the standalone server from source, run:
+
+```sh
+uds run build-lsp
+```
+
+Follow [the Neovim guide](NEOVIM.md#configure-neovim) to register the server
+with its built-in LSP client. Set `cmd` to the absolute path of the downloaded
+server or this checkout's `build/uds-lsp`, or install it on your `PATH` as
+described in the guide. Then
+open `tests/test_data/lsp/healthy/bundle.uds.hcl`. The guide includes completion,
+keybinding, and connection checks; no particular plugin manager is required.
+
+Neither editor needs the CLI's `NextMode` feature flag to run `uds-lsp`.
+
+## Testing LSP diagnostics
+
+The [validation playground](tests/test_data/lsp/) contains several bundles with
+healthy and intentionally broken configurations. It covers missing required
+blocks and fields, missing files, invalid config, template errors, and values
+files shared between bundles. Open
+that directory as your editor workspace; the [playground README](tests/test_data/lsp/README.md)
+lists all scenarios and their expected diagnostics. Errors in the broken
+scenarios are expected, even with their tabs closed.
+
+### Values paths and templates
+
+With either editor connected, try these checks. Paths are relative to the
+playground directory:
+
+1. **Missing values file:** Open [broken-paths/bundle.uds.hcl](tests/test_data/lsp/broken-paths/bundle.uds.hcl).
+   Expect an error on `values/missing.yaml` because the file does not exist,
+   plus another on `values/directory.yaml` because it is a directory.
+2. **Undefined variable:** Open [broken-values/values/missing-variable.yaml](tests/test_data/lsp/broken-values/values/missing-variable.yaml).
+   Expect an error for `.vars.missing`. Replace it with `.vars.service.name`
+   without saving; that file's diagnostic should clear using the value in
+   `broken-values/defaults.uds.hcl`.
+3. **Template syntax:** Open [broken-values/values/unclosed.yaml](tests/test_data/lsp/broken-values/values/unclosed.yaml).
+   Expect an error for a `range` without an `end`. Add `{{ end }}` on a new line
+   to close the block; that file's diagnostic should clear.
+
+Undo your edits after each check to restore the original scenarios.
+
+### Missing required blocks and fields
+
+Open [missing-required/bundle.uds.hcl](tests/test_data/lsp/missing-required/bundle.uds.hcl).
+It intentionally omits the `uds` block, `metadata.name`, and the package's
+`source`. Expect diagnostics for each missing item. Replace the fixture's
+contents with this complete definition to clear them, even before saving:
 
 ```hcl
 uds {
@@ -56,86 +170,33 @@ uds {
 }
 
 metadata {
-  name        = "next-quickstart"
-  description = "Next mode quickstart bundle"
-  version     = "0.1.0"
+  name = "lsp-missing-required"
 }
 
-package "uds_k3d_dev" {
-  source = "oci://ghcr.io/defenseunicorns/packages/uds-k3d:0.21.2"
-  signature_verification { verify = false }
-}
-
-package "init" {
-  source = "oci://ghcr.io/zarf-dev/packages/init:v0.88.0"
-  signature_verification {
-    keyless {
-      certificate_identity_regexp = "https://github\\.com/zarf-dev/zarf/\\.github/workflows/release\\.yml@refs/tags/v\\d+\\.\\d+\\.\\d+"
-      certificate_oidc_issuer      = "https://token.actions.githubusercontent.com"
-    }
-  }
-  depends_on = [package.uds_k3d_dev]
-}
-
-package "podinfo" {
-  source = "oci://ghcr.io/defenseunicorns/uds-cli/podinfo:0.0.2"
-  signature_verification { verify = false }
-  depends_on = [package.init]
+package "app" {
+  source = "oci://example.invalid/lsp/demo:0.0.0"
 }
 ```
 
-Deploy directly from the bundle definition during development:
+Undo afterward to restore the fixture. See the [bundle definition reference](docs/reference/next/bundle-uds-hcl.mdx#top-level-structure)
+for required blocks and fields.
 
-```bash
-CLI_FEATURES=NextMode=true uds bundle dev deploy .
-```
+In VS Code, filter the Problems panel to `uds-lsp`; other YAML servers may flag
+unrendered template syntax independently.
 
-Or create an unsigned bundle artifact and deploy it:
+The fixtures use placeholder package sources and are for editor testing. The
+LSP does not fetch packages, and these examples do not require deployment.
 
-```bash
-CLI_FEATURES=NextMode=true uds bundle create --unsigned .
-CLI_FEATURES=NextMode=true uds bundle deploy ./uds-bundle-next-quickstart-<ARCH>-0.1.0.tar.zst --skip-signature-verification
-```
+## Scope and further reading
 
-Replace `ARCH` with the bundle architecture, such as `amd64` or `arm64`.
+Validation covers local HCL and Go template execution. It does not validate
+rendered YAML, package schemas, registry availability, or cluster state. Editor
+validation uses adjacent defaults/config; CLI commands still select deploy-time
+config explicitly with `--config`.
 
-The `--unsigned` flag is required here because this quickstart does not configure bundle signing. Deploying the unsigned artifact requires `--skip-signature-verification`.
-
-## CLI Modes
-UDS CLI currently supports two modes while the next-generation CLI matures.
-
-Legacy mode is the default today and preserves existing behavior. Next mode is available as an alpha preview behind the `NextMode` feature flag.
-
-```bash
-uds version
-uds --features=NextMode=true version
-CLI_FEATURES=NextMode=true uds version
-```
-
-Next mode will continue to mature during alpha and is planned to become the default in beta. Legacy mode will be removed after the beta migration window.
-
-## Legacy Mode Quickstart
-UDS-CLI provides a mechanism to bundle and deploy multiple, independent Zarf packages. To create a `UDSBundle` of Zarf packages, create a `uds-bundle.yaml` file like so:
-
-```yaml
-kind: UDSBundle
-metadata:
-  name: example
-  description: an example UDS bundle
-  version: 0.0.1
-
-packages:
-  - name: init
-    repository: ghcr.io/zarf-dev/packages/init
-    ref: v0.88.0
-    keylessVerification:
-      certificateIdentityRegexp: https://github\.com/zarf-dev/zarf/\.github/workflows/release\.yml@refs/tags/v\d+\.\d+\.\d+
-      certificateOIDCIssuer: https://token.actions.githubusercontent.com
-  - name: podinfo
-    repository: ghcr.io/defenseunicorns/uds-cli/podinfo
-    ref: 0.0.2
-```
-Running `uds create` in the same directory as the above `uds-bundle.yaml` will create a bundle tarball containing both the Zarf init package and podinfo. The bundle can be deployed with `uds deploy`.
-
-## Contributing
-Build instructions and contributing docs are located in [CONTRIBUTING.md](https://github.com/defenseunicorns/uds-cli/blob/main/CONTRIBUTING.md).
+- [Language-server reference](docs/reference/next/language-server.mdx) — diagnostics, navigation, workspace behavior, and validation limits.
+- [VS Code extension](vscode-extension/README.md) — install, activate, configure, and package the bundled client/server.
+- [Neovim setup](NEOVIM.md) — standalone server configuration and troubleshooting.
+- [Validation playground](tests/test_data/lsp/README.md) — reproducible scenarios and expected diagnostics.
+- [Contributing](CONTRIBUTING.md#building-the-app) — build tasks, platform binaries, and checksums.
+- [UDS CLI documentation](docs/) — bundle format and the underlying CLI workflows.
