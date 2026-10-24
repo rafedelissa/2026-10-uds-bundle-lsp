@@ -40,6 +40,7 @@ credentials.
 | [Hover information](internal/lsp/hover.go) | Field documentation and context for expressions, variables, and `file()` calls. |
 | [Completion](NEOVIM.md#configure-completion) | UDS fields and blocks, local/package references, built-in expressions, local file paths, and `.vars` keys in referenced values templates. |
 | [Go to definition](docs/reference/next/language-server.mdx#go-to-definition) | Jump to locals, package declarations, values files, and variable assignments in defaults/config. |
+| [Find references](docs/reference/next/language-server.mdx#find-references) | Inverse of Go to definition, find other places the variable, local or package is referenced. |
 | [Rename](internal/lsp/rename.go) | Rename locals and packages with their references, or variables across defaults, config, and referenced values templates. Ambiguous shared-template renames are rejected. |
 | [Document highlights](internal/lsp/highlight.go) | Highlight local and package declarations and references in the current bundle. |
 | [Formatting](docs/reference/next/language-server.mdx#formatting) | Apply canonical HCL whitespace to the three UDS HCL source files. |
