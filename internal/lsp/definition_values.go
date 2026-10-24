@@ -65,7 +65,7 @@ func (s *documentStore) valuesFileDefinitions(ctx context.Context, doc document,
 					valuesPath = filepath.Join(filepath.Dir(filename), valuesPath)
 				}
 				if target, err := s.sourceDocument(valuesPath); err == nil {
-					result = appendDefinition(result, location{URI: target.URI})
+					result = appendLocation(result, location{URI: target.URI})
 				}
 			}
 		}
@@ -111,7 +111,7 @@ func (s *documentStore) valuesVariableDefinitions(ctx context.Context, doc docum
 		config, configErr := s.sourceDocument(filepath.Join(dir, bundle.BundleConfigFileName))
 		if configErr == nil {
 			if target, found := variableDefinitionRange(config, names); found {
-				result = appendDefinition(result, location{URI: config.URI, Range: rangeFromHCL(config.Text, target)})
+				result = appendLocation(result, location{URI: config.URI, Range: rangeFromHCL(config.Text, target)})
 			} else if variableAncestorOverrides(config, names) {
 				continue // A config ancestor replaces this complete defaults subtree.
 			}
@@ -119,14 +119,14 @@ func (s *documentStore) valuesVariableDefinitions(ctx context.Context, doc docum
 		defaults, err := s.sourceDocument(filepath.Join(dir, bundle.BundleDefaultsFileName))
 		if err == nil {
 			if target, ok := variableDefinitionRange(defaults, names); ok {
-				result = appendDefinition(result, location{URI: defaults.URI, Range: rangeFromHCL(defaults.Text, target)})
+				result = appendLocation(result, location{URI: defaults.URI, Range: rangeFromHCL(defaults.Text, target)})
 			}
 		}
 	}
 	return result
 }
 
-func appendDefinition(locations []location, target location) []location {
+func appendLocation(locations []location, target location) []location {
 	if slices.Contains(locations, target) {
 		return locations
 	}

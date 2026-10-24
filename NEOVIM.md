@@ -2,7 +2,7 @@
 
 This guide configures Neovim to use `uds-lsp` for UDS Next bundle HCL and referenced YAML values files. It uses Neovim's built-in LSP client and does not require a plugin manager or a particular completion plugin.
 
-The language server provides diagnostics, hover information, completion, definition navigation, document highlights, cross-file rename, and formatting.
+The language server provides diagnostics, hover information, completion, definition and reference navigation, document highlights, cross-file rename, and formatting.
 
 This guide provides a general, plugin-independent starting point rather than a recommended configuration for every Neovim setup. Neovim distributions, plugin managers, LSP frameworks, completion plugins, and personal conventions may configure these features differently. Adapt the examples to your local configuration and avoid registering duplicate clients, mappings, completion sources, or formatters.
 
@@ -91,7 +91,7 @@ The client may attach `uds-lsp` to unrelated HCL or YAML buffers in the selected
 
 ### 3. Configure optional LSP actions
 
-`uds-lsp` provides standard LSP capabilities; it does not require particular keybindings. Your Neovim distribution or existing LSP configuration may already map hover, definition, rename, highlights, and formatting. Use those mappings if they work for your setup, or assign any keys you prefer.
+`uds-lsp` provides standard LSP capabilities; it does not require particular keybindings. Your Neovim distribution or existing LSP configuration may already map hover, definition, references, rename, highlights, and formatting. Use those mappings if they work for your setup, or assign any keys you prefer.
 
 The following is only an example of adding buffer-local mappings when the UDS server attaches. Omit this section if your configuration already provides equivalent actions:
 
@@ -112,6 +112,7 @@ vim.api.nvim_create_autocmd("LspAttach", {
 
     map("K", vim.lsp.buf.hover, "UDS hover")
     map("gd", vim.lsp.buf.definition, "UDS go to definition")
+    map("grr", vim.lsp.buf.references, "UDS find references")
     map("grn", vim.lsp.buf.rename, "UDS rename")
     map("<leader>lh", vim.lsp.buf.document_highlight, "UDS document highlights")
     map("<leader>lc", vim.lsp.buf.clear_references, "Clear UDS highlights")
@@ -158,8 +159,9 @@ Verify the features against a bundle workspace:
 1. Introduce an invalid bundle attribute and confirm that a diagnostic appears.
 2. Place the cursor over a supported field or expression and press `K`.
 3. Place the cursor on `local.name`, `package.name`, or a `.vars.name` reference and press `gd`.
-4. Request completion with `<C-x><C-o>` or your completion frontend.
-5. Run `<leader>lf` in a UDS HCL file and confirm that formatting is applied.
+4. Find the same symbol's usages with `grr`.
+5. Request completion with `<C-x><C-o>` or your completion frontend.
+6. Run `<leader>lf` in a UDS HCL file and confirm that formatting is applied.
 
 ## Troubleshooting
 

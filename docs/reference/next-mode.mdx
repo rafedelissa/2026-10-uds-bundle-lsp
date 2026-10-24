@@ -228,6 +228,14 @@ CLI_FEATURES=NextMode=true uds bundle fmt ./my-bundle
 
 The command uses the same canonical HCL formatter as the language server and writes changed files in place. It prints each changed path, or `No formatting changes required.` when the workspace is already formatted. Use `--output json` or `--output yaml` for structured output. The command returns an error if the directory contains no `bundle.uds.hcl` file and rejects bundle operation flags such as `--architecture` and `--config`. Referenced YAML values files are not formatted.
 
+Use `--check` in CI without changing files:
+
+```bash
+CLI_FEATURES=NextMode=true uds bundle fmt ./my-bundle --check
+```
+
+The check prints files that would be formatted and exits with status 1 when any file is unformatted. A clean workspace exits with status 0. JSON and YAML check output report these paths in the `unformatted` field; normal formatting output continues to use `formatted`.
+
 ### Linting bundle source
 
 Run the same workspace diagnostics used by the UDS language server before creating or deploying a bundle:
@@ -236,7 +244,15 @@ Run the same workspace diagnostics used by the UDS language server before creati
 CLI_FEATURES=NextMode=true uds bundle lint ./my-bundle
 ```
 
-The command checks `bundle.uds.hcl`, adjacent `config.uds.hcl` and `defaults.uds.hcl` files, and referenced YAML values files. It returns an error if the directory contains no `bundle.uds.hcl` file. Text output uses `path:line:column: severity: message` and prints `No issues found.` when the workspace is clean. Use `--output json` or `--output yaml` for structured output. The command rejects bundle operation flags such as `--architecture` and `--config` rather than silently ignoring them. It returns an error when any error-level diagnostic is present; warnings do not cause failure.
+The command checks `bundle.uds.hcl`, adjacent `config.uds.hcl` and `defaults.uds.hcl` files, and referenced YAML values files. It returns an error if the directory contains no `bundle.uds.hcl` file. Text output uses `path:line:column: severity: message` and prints `No issues found.` when the workspace is clean. Use `--output json` or `--output yaml` for structured output. The command rejects bundle operation flags such as `--architecture` and `--config` rather than silently ignoring them. By default, it returns an error when any error-level diagnostic is present; warnings do not cause failure.
+
+Use `--check` in CI to treat every diagnostic, including warnings, information, and hints, as a failure:
+
+```bash
+CLI_FEATURES=NextMode=true uds bundle lint ./my-bundle --check
+```
+
+The check exits with status 1 when any diagnostic is found and status 0 when the workspace is clean.
 
 ## Deploying a bundle
 

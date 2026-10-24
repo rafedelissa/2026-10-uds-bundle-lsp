@@ -50,11 +50,19 @@ Invoke your editor's **Go to Definition** action on a reference:
 
 Variable navigation returns all matching assignments, including defaults replaced by config. Results are ordered by owning bundle URI, then config before defaults, and duplicate locations are removed. For a values file shared by multiple bundles, every discovered referencing bundle contributes locations. This shows where a variable is configured; a location in defaults does not imply that its value wins at deployment time.
 
-The server returns a standard LSP definition-location array. Editors can show multiple targets in a picker or peek view; the editor controls this presentation. **Find References** is a separate LSP feature for locating usages and is not provided by this navigation feature.
+The server returns a standard LSP definition-location array. Editors can show multiple targets in a picker or peek view; the editor controls this presentation.
 
 Navigation uses indexed files on disk with open-buffer overrides, so targets do not need open tabs. Missing or unreadable values files have no navigation target. A computed `values_files` list can return multiple resolved file targets when no individual list item can be identified. Within a path expression, `local.name` still navigates to its local declaration.
 
 Template navigation supports syntactically valid Go templates, explicit `$.vars` root references, `with` object scopes, and simple variable aliases such as `{{ $db := .vars.database }}`. It does not infer individual `range` elements, dynamic index keys, transformed pipeline results, or named-template call contexts. Constant computed HCL objects navigate to their defining expression when no literal key location exists.
+
+## Find references
+
+Invoke your editor's **Find References** action on a `local.name` or `package.name` declaration or usage to find every matching usage in the bundle. The result includes the declaration when requested by the editor.
+
+Find References on a variable key in `config.uds.hcl` or `defaults.uds.hcl`, or on a `.vars` path in a referenced YAML values template, searches the adjacent variable layers and every values file referenced by the bundle. Direct dot paths, quoted `index` keys, aliases, and supported template scopes use the same static resolution as Go to Definition and rename. Shared values files search all discovered bundles that reference the file. Duplicate locations are removed and results are ordered by URI and source position.
+
+References use open-buffer content before files on disk. Unrelated YAML files, dynamic template paths, and named-template call contexts do not produce UDS variable references.
 
 ## Formatting
 
