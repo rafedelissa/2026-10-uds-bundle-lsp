@@ -134,24 +134,7 @@ func (s *documentStore) variableRenameTarget(ctx context.Context, doc document, 
 	}
 	switch filepath.Base(filename) {
 	case bundle.BundleConfigFileName, bundle.BundleDefaultsFileName:
-		offset, ok := byteAtPosition(doc.Text, pos)
-		if !ok {
-			return variableRenameTarget{}, false, nil
-		}
-		file, _ := hclsyntax.ParseConfig([]byte(doc.Text), doc.URI, hcl.InitialPos)
-		if file == nil {
-			return variableRenameTarget{}, false, nil
-		}
-		body, ok := file.Body.(*hclsyntax.Body)
-		if !ok || body.Attributes["variables"] == nil {
-			return variableRenameTarget{}, false, nil
-		}
-		variablePos := hcl.Pos{Byte: offset}
-		names, _, _, found := variableAtPosition(body.Attributes["variables"].Expr, variablePos, nil)
-		if !found && variablePos.Byte > 0 {
-			variablePos.Byte--
-			names, _, _, found = variableAtPosition(body.Attributes["variables"].Expr, variablePos, nil)
-		}
+		names, found := variableNamesAtPosition(doc, pos)
 		return variableRenameTarget{dir: filepath.Dir(filename), names: names}, found, nil
 	case bundle.BundleFileName:
 		return variableRenameTarget{}, false, nil
@@ -178,6 +161,28 @@ func (s *documentStore) variableRenameTarget(ctx context.Context, doc document, 
 		return variableRenameTarget{}, true, errors.New("values file is referenced by multiple bundles; rename from a variables definition instead")
 	}
 	return variableRenameTarget{dir: dirs[0], names: names, fromValues: true}, true, nil
+}
+
+func variableNamesAtPosition(doc document, pos position) ([]string, bool) {
+	offset, ok := byteAtPosition(doc.Text, pos)
+	if !ok {
+		return nil, false
+	}
+	file, _ := hclsyntax.ParseConfig([]byte(doc.Text), doc.URI, hcl.InitialPos)
+	if file == nil {
+		return nil, false
+	}
+	body, ok := file.Body.(*hclsyntax.Body)
+	if !ok || body.Attributes["variables"] == nil {
+		return nil, false
+	}
+	variablePos := hcl.Pos{Byte: offset}
+	names, _, _, found := variableAtPosition(body.Attributes["variables"].Expr, variablePos, nil)
+	if !found && variablePos.Byte > 0 {
+		variablePos.Byte--
+		names, _, _, found = variableAtPosition(body.Attributes["variables"].Expr, variablePos, nil)
+	}
+	return names, found
 }
 
 func documentBaseName(doc document) string {
@@ -231,12 +236,12 @@ func objectKeyRange(expr hcl.Expression, names []string) (hcl.Range, bool) {
 	return hcl.Range{}, false
 }
 
-func templateVariableRenameEdits(text string, names []string, newName string) []textEdit {
+func templateVariableReferenceRanges(text string, names []string) []documentRange {
 	leaf := names[len(names)-1]
 	offsets := templateVariableReferenceOffsets(text, names)
 	sort.Ints(offsets)
 	seen := make(map[documentRange]struct{})
-	var result []textEdit
+	var result []documentRange
 	for _, offset := range offsets {
 		r := templateVariableHoverRange(text, offset, leaf)
 		start, ok := byteAtPosition(text, r.Start)
@@ -256,6 +261,18 @@ func templateVariableRenameEdits(text string, names []string, newName string) []
 			continue
 		}
 		seen[r] = struct{}{}
+		result = append(result, r)
+	}
+	return result
+}
+
+func templateVariableRenameEdits(text string, names []string, newName string) []textEdit {
+	ranges := templateVariableReferenceRanges(text, names)
+	result := make([]textEdit, 0, len(ranges))
+	for _, r := range ranges {
+		start, _ := byteAtPosition(text, r.Start)
+		end, _ := byteAtPosition(text, r.End)
+		oldText := text[start:end]
 		replacement := newName
 		if oldText == `""` {
 			replacement = strconv.Quote(newName)

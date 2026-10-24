@@ -44,6 +44,7 @@ func TestServeLifecycle(t *testing.T) {
 			"documentHighlightProvider": true,
 			"hoverProvider": true,
 			"positionEncoding": "utf-16",
+			"referencesProvider": true,
 			"renameProvider": true,
 			"textDocumentSync": {"openClose": true, "change": 1, "save": {"includeText": false}},
 			"workspace": {"workspaceFolders": {"supported": true, "changeNotifications": true}}

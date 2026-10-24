@@ -162,6 +162,7 @@ func handleMessage(ctx context.Context, writer *bufio.Writer, msg message, state
 				DocumentHighlightProvider:  true,
 				HoverProvider:              true,
 				PositionEncoding:           "utf-16",
+				ReferencesProvider:         true,
 				RenameProvider:             true,
 				Workspace: workspaceCapabilities{WorkspaceFolders: workspaceFolderCapabilities{
 					Supported: true, ChangeNotifications: true,
@@ -264,6 +265,26 @@ func handleMessage(ctx context.Context, writer *bufio.Writer, msg message, state
 		result, err := json.Marshal(edits)
 		if err != nil {
 			return false, state, fmt.Errorf("encode formatting result: %w", err)
+		}
+		return false, state, writeResult(writer, msg.ID, result)
+	case "textDocument/references":
+		if msg.ID == nil {
+			return false, state, nil
+		}
+		if state != stateInitialized {
+			return false, state, writeError(writer, msg.ID, codeServerNotInitialized, "server not initialized")
+		}
+		var params referencesParams
+		if err := json.Unmarshal(msg.Params, &params); err != nil || params.TextDocument.URI == "" || params.Position == nil || params.Position.Line < 0 || params.Position.Character < 0 {
+			return false, state, writeError(writer, msg.ID, codeInvalidParams, "invalid references parameters")
+		}
+		locations, err := documents.references(ctx, params)
+		if err != nil {
+			return false, state, writeError(writer, msg.ID, codeInvalidParams, err.Error())
+		}
+		result, err := json.Marshal(locations)
+		if err != nil {
+			return false, state, fmt.Errorf("encode references result: %w", err)
 		}
 		return false, state, writeResult(writer, msg.ID, result)
 	case "textDocument/rename":
